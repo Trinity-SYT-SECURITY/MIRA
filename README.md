@@ -65,17 +65,6 @@ python examples/run_probes.py     # Attack probe testing
 python examples/run_interactive.py # HTML visualization
 ```
 
-## Citation
-
-```bibtex
-@software{mira2024,
-  title = {MIRA: Mechanistic Interpretability Research & Attack Framework},
-  author = {Trinity-SYT-SECURITY},
-  year = {2024},
-  url = {https://github.com/Trinity-SYT-SECURITY/MIRA}
-}
-```
-
 ## License
 
 MIT License
