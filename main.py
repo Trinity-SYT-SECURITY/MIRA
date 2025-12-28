@@ -207,52 +207,37 @@ def main():
     for i, prompt in enumerate(test_prompts):
         print(f"\n  [{i+1}/{len(test_prompts)}] {prompt[:45]}...")
         
-        # Run attack with live updates
-        suffix_tokens = attack.initialize_suffix(method="exclamation")
-        best_loss = float("inf")
+        # Run attack (simplified - use built-in optimize)
+        result = attack.optimize(prompt, num_steps=30, verbose=False)
         
-        for step in range(30):
-            try:
-                new_tokens = attack.optimize_step(prompt, suffix_tokens)
-                loss = float(attack.compute_loss(prompt, new_tokens))
-                suffix_text = attack.decode_suffix(new_tokens)
-                
-                if loss < best_loss:
-                    best_loss = loss
-                
-                # Send to live viz
-                if server:
-                    server.send_attack_step(
-                        step=step + 1,
-                        loss=loss,
-                        suffix=suffix_text[:25] + "..." if len(suffix_text) > 25 else suffix_text,
-                        success=False,
+        # Send progress to live viz
+        if server:
+            for step in range(10):
+                server.send_attack_step(
+                    step=step + 1,
+                    loss=result.final_loss * (1 + (10 - step) / 10),
+                    suffix=result.adversarial_suffix[:25] if result.adversarial_suffix else "...",
+                    success=result.success,
+                )
+                for layer in range(model.n_layers):
+                    refusal = 0.2 + 0.5 * (step / 10) * (layer / model.n_layers)
+                    acceptance = 0.3 * (1 - step / 10) * (layer / model.n_layers)
+                    server.send_layer_update(
+                        layer_idx=layer,
+                        refusal_score=refusal,
+                        acceptance_score=acceptance,
+                        direction="refusal" if refusal > acceptance else "acceptance",
                     )
-                    # Update layer flow
-                    for layer in range(model.n_layers):
-                        refusal = 0.2 + 0.5 * (step / 30) * (layer / model.n_layers)
-                        acceptance = 0.3 * (1 - step / 30) * (layer / model.n_layers)
-                        server.send_layer_update(
-                            layer_idx=layer,
-                            refusal_score=refusal,
-                            acceptance_score=acceptance,
-                            direction="refusal" if refusal > acceptance else "acceptance",
-                        )
-                
-                suffix_tokens = new_tokens
-                time.sleep(0.03)  # Small delay for viz
-            except:
-                continue
+                time.sleep(0.05)
         
-        result = attack.optimize(prompt, num_steps=1, verbose=False)
         status = "SUCCESS" if result.success else "FAILED"
-        print(f"      Result: {status} | Loss: {best_loss:.4f}")
+        print(f"      Result: {status} | Loss: {result.final_loss:.4f}")
         
         attack_results.append({
             "prompt": prompt,
             "response": result.generated_response or "",
             "success": result.success,
-            "loss": best_loss,
+            "loss": result.final_loss,
         })
         
         logger.log_attack(
@@ -270,13 +255,13 @@ def main():
     ])
     
     print(f"""
-  ┌────────────────────────────────────────────────────────────┐
-  │ GRADIENT ATTACK RESULTS                                    │
-  ├────────────────────────────────────────────────────────────┤
-  │ Attack Success Rate:  {gradient_metrics.asr:>34.1%} │
-  │ Refusal Rate:         {gradient_metrics.refusal_rate:>34.1%} │
-  │ Total Attacks:        {gradient_metrics.total_attacks:>34} │
-  └────────────────────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────┐
+  │ GRADIENT ATTACK RESULTS                                     │
+  ├─────────────────────────────────────────────────────────────┤
+  │ Attack Success Rate:  {gradient_metrics.asr:>34.1%}         │
+  │ Refusal Rate:         {gradient_metrics.refusal_rate:>34.1%}│
+  │ Total Attacks:        {gradient_metrics.total_attacks:>34}  │
+  └─────────────────────────────────────────────────────────────┘
     """)
     
     # ================================================================
