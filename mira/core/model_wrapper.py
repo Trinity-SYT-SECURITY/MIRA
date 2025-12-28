@@ -83,11 +83,11 @@ class ModelWrapper:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        # Load model
+        # Load model (use 'dtype' instead of deprecated 'torch_dtype')
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             cache_dir=cache_dir,
-            torch_dtype=self.dtype,
+            dtype=self.dtype,
             trust_remote_code=True,
         ).to(self.device)
         self.model.eval()

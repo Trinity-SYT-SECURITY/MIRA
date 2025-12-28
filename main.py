@@ -99,7 +99,10 @@ def main():
     # ================================================================
     print_phase(2, TOTAL_PHASES, "INITIALIZATION")
     
-    output_dir = Path(args.output)
+    # Create timestamped run directory
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_output = Path(args.output)
+    output_dir = base_output / f"run_{run_timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
     charts_dir = output_dir / "charts"
     data_dir = output_dir / "data"
@@ -292,16 +295,16 @@ def main():
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                       RESEARCH COMPLETE                              ║
 ╠══════════════════════════════════════════════════════════════════════╣
-║  Duration:           {elapsed:>47.1f}s ║
-║  Model:              {model.model_name:<47} ║
+║  Duration:           {elapsed:>47.1f}s                               ║
+║  Model:              {model.model_name:<47}                          ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  RESULTS                                                             ║
 ║    Probe Accuracy:   {probe_result.probe_accuracy:>47.1%}            ║
-║    Gradient ASR:     {gradient_metrics.asr:>47.1%}  ║
+║    Gradient ASR:     {gradient_metrics.asr:>47.1%}                   ║
 ║    Probe Bypass:     {probe_summary.get('bypass_rate', 0):>46.1%}    ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  OUTPUT FILES                                                        ║
-║    {str(output_dir.absolute()):<64} ║
+║    {str(output_dir.absolute()):<64}                                  ║
 ║      charts/subspace.png                                             ║
 ║      charts/asr.png                                                  ║
 ║      html/mira_report.html                                           ║
