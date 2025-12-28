@@ -289,24 +289,92 @@ DASHBOARD_HTML = '''
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
         :root {
-            --primary: #0ff;
-            --secondary: #f0f;
-            --warning: #ff0;
-            --danger: #f44;
-            --success: #0f0;
+            --primary: #00f5ff;
+            --secondary: #ff00ff;
+            --accent: #ffff00;
+            --danger: #ff4466;
+            --success: #00ff88;
             --bg-dark: #0a0a0f;
-            --bg-panel: rgba(15, 25, 35, 0.9);
-            --border: rgba(0, 255, 255, 0.2);
+            --bg-panel: rgba(15, 25, 35, 0.7);
+            --border: rgba(0, 255, 255, 0.3);
+            --glow: 0 0 20px rgba(0, 245, 255, 0.5);
         }
         
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
         
         body {
             font-family: 'Space Mono', monospace;
-            background: var(--bg-dark);
+            background: #0a0a0f;
             color: #ddd;
             min-height: 100vh;
             overflow-x: hidden;
+            position: relative;
+        }
+        
+        /* Animated Background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(0, 245, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(255, 0, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(255, 255, 0, 0.05) 0%, transparent 50%);
+            animation: bgShift 20s ease infinite;
+            z-index: -1;
+        }
+        
+        @keyframes bgShift {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(50px, -30px) scale(1.1); }
+            66% { transform: translate(-30px, 50px) scale(0.9); }
+        }
+        
+        /* Glassmorphism panels */
+        .panel {
+            background: rgba(15, 25, 35, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 
+                0 8px 32px 0 rgba(0, 0, 0, 0.37),
+                inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+        }
+        
+        .panel:hover {
+            transform: translateY(-4px);
+            border-color: rgba(0, 255, 255, 0.5);
+            box-shadow: 
+                0 12px 40px 0 rgba(0, 245, 255, 0.2),
+                inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+        }
+        
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            animation: scanline 3s linear infinite;
+        }
+        
+        @keyframes scanline {
+            0% { left: -100%; }
+            100% { left: 100%; }
         }
         
         /* Animated background grid */
