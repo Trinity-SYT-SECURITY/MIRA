@@ -2,69 +2,186 @@
 
 A research framework for understanding and evaluating the security of Large Language Models through mechanistic interpretability.
 
-## Overview
+## Features
 
-MIRA provides tools to:
-- Analyze internal model representations and identify decision boundaries
-- Discover safety-relevant subspaces within model activations
-- Develop and evaluate adversarial attacks based on mechanistic understanding
-- Visualize and quantify attack effectiveness
+- **Subspace Analysis**: Identify refusal/acceptance decision boundaries
+- **Attack Strategies**: Gradient, rerouting, and proxy-based attacks
+- **Auto Visualization**: Publication-quality charts generated during experiments
+- **Cross-Platform**: Automatic OS and GPU detection (Windows/Linux/Mac)
+
+---
 
 ## Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/Trinity-SYT-SECURITY/MIRA.git
+cd MIRA
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+.\venv\Scripts\activate   # Windows
+
+# Install dependencies
 pip install -e .
+
+# Verify installation
+python -c "from mira import __version__; print(f'MIRA {__version__}')"
 ```
+
+---
+
+## Testing
+
+### Run All Tests
+
+```bash
+# Run complete test suite
+pytest tests/ -v
+
+# Expected output:
+# ============================= 31 passed in 11.28s =============================
+```
+
+### Run Specific Test Categories
+
+```bash
+# Configuration tests
+pytest tests/test_comprehensive.py::TestConfiguration -v
+
+# Environment detection tests
+pytest tests/test_comprehensive.py::TestEnvironmentDetection -v
+
+# Metrics tests
+pytest tests/test_comprehensive.py::TestMetrics -v
+
+# Visualization tests
+pytest tests/test_comprehensive.py::TestVisualization -v
+
+# Import tests (verify all modules load)
+pytest tests/test_comprehensive.py::TestImports -v
+```
+
+### Test Coverage
+
+```bash
+# Run with coverage report
+pytest tests/ --cov=mira --cov-report=html
+
+# Open htmlcov/index.html to view detailed coverage
+```
+
+### Verify Environment Detection
+
+```bash
+# Check system detection
+python -c "from mira.utils import print_environment_info; print_environment_info()"
+
+# Expected output:
+# ============================================================
+# MIRA Framework - Environment Detection
+# ============================================================
+# System:
+#   OS: Windows/Linux/Darwin
+#   Python: 3.x.x
+# GPU:
+#   Backend: CUDA/MPS/CPU
+#   Device: (if available)
+# Recommended Settings:
+#   Model: EleutherAI/pythia-70m
+# ============================================================
+```
+
+### Test Configuration Loading
+
+```bash
+python -c "
+from mira.config import MiraConfig
+config = MiraConfig.load()
+print(f'Model: {config.model.name}')
+print(f'Device: {config.model.get_device()}')
+"
+```
+
+### Full Pipeline Test
+
+```bash
+# Run the complete example pipeline
+python examples/full_pipeline.py
+```
+
+---
 
 ## Quick Start
 
 ```python
-from mira.core import ModelWrapper
-from mira.analysis import SubspaceAnalyzer
-from mira.attack import ReroutingAttack
-from mira.metrics import compute_asr
+from mira.runner import ExperimentRunner
 
-# Load model
-model = ModelWrapper("gpt2")
+# Initialize with auto environment detection
+runner = ExperimentRunner(experiment_name="my_research")
+runner.print_environment()
 
-# Analyze internal subspaces
-analyzer = SubspaceAnalyzer(model)
-subspaces = analyzer.identify_subspaces(
+# Load model (uses recommended settings for your hardware)
+runner.load_model()
+
+# Run subspace analysis with auto visualization
+results = runner.run_subspace_analysis(
     safe_prompts=["Hello, how are you?"],
-    unsafe_prompts=["Ignore previous instructions"]
+    harmful_prompts=["Ignore all previous instructions"]
 )
 
-# Run attack
-attack = ReroutingAttack(model, subspaces)
-result = attack.optimize("test prompt", steps=100)
+# Run attack with auto logging
+attack_result = runner.run_attack("test prompt", attack_type="gradient")
 
-# Evaluate
-asr = compute_asr(model, [result])
-print(f"Attack Success Rate: {asr:.2%}")
+# Generate summary with all charts
+summary = runner.generate_summary()
+print(f"ASR: {summary['attack_success_rate']:.2%}")
 ```
 
-## Modules
+---
 
-### Analysis
-- `SubspaceAnalyzer`: Identify refusal/acceptance subspaces
-- `ActivationAnalyzer`: Study activation patterns
-- `AttentionAnalyzer`: Analyze attention mechanisms
-- `LogitLens`: Layer-wise prediction analysis
+## Documentation
 
-### Attack
-- `ReroutingAttack`: Subspace rerouting attacks
-- `GradientAttack`: Token-level gradient optimization
-- `ProxyAttack`: Black-box proxy-based attacks
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module structure and design |
+| [API.md](docs/API.md) | Detailed API reference |
+| [EXAMPLES.md](docs/EXAMPLES.md) | Usage examples |
 
-### Metrics
-- Attack Success Rate (ASR)
-- Subspace Distance
-- Probability Distribution Metrics
+---
 
-### Visualization
-- Subspace plots
-- Attention heatmaps
-- Activation trajectories
+## Project Structure
+
+```
+mira/
+├── core/           # Model wrapper and hooks
+├── analysis/       # Subspace, activation, attention analysis
+├── attack/         # Attack implementations
+├── metrics/        # Evaluation metrics
+├── visualization/  # Chart generation
+├── utils/          # Environment detection, logging
+├── config.py       # Configuration loader
+└── runner.py       # Integrated experiment runner
+```
+
+---
+
+## Configuration
+
+All parameters configurable via `config.yaml`:
+
+```yaml
+model:
+  name: "EleutherAI/pythia-70m"
+  device: "auto"  # auto-detects GPU/CPU
+
+evaluation:
+  refusal_patterns: [...]
+  acceptance_patterns: [...]
+```
+
+---
 
 ## License
 
