@@ -14,106 +14,51 @@ A research framework for understanding and evaluating the security of Large Lang
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/Trinity-SYT-SECURITY/MIRA.git
 cd MIRA
-
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-.\venv\Scripts\activate   # Windows
-
-# Install dependencies
 pip install -e .
-
-# Verify installation
-python -c "from mira import __version__; print(f'MIRA {__version__}')"
 ```
 
 ---
 
-## Testing
+## Run Complete Research Pipeline
 
-### Run All Tests
+### One-Command Execution
 
 ```bash
-# Run complete test suite
-pytest tests/ -v
-
-# Expected output:
-# ============================= 31 passed in 11.28s =============================
+python examples/run_research.py --model EleutherAI/pythia-70m --output ./research_output
 ```
 
-### Run Specific Test Categories
+This runs the **complete research workflow**:
+1. Environment detection (OS/GPU)
+2. Model loading
+3. Subspace analysis
+4. Attack experiments (Gradient + Rerouting)
+5. Metrics computation
+6. Chart generation
+7. Summary report
 
-```bash
-# Configuration tests
-pytest tests/test_comprehensive.py::TestConfiguration -v
+### Output Files
 
-# Environment detection tests
-pytest tests/test_comprehensive.py::TestEnvironmentDetection -v
-
-# Metrics tests
-pytest tests/test_comprehensive.py::TestMetrics -v
-
-# Visualization tests
-pytest tests/test_comprehensive.py::TestVisualization -v
-
-# Import tests (verify all modules load)
-pytest tests/test_comprehensive.py::TestImports -v
 ```
-
-### Test Coverage
-
-```bash
-# Run with coverage report
-pytest tests/ --cov=mira --cov-report=html
-
-# Open htmlcov/index.html to view detailed coverage
-```
-
-### Verify Environment Detection
-
-```bash
-# Check system detection
-python -c "from mira.utils import print_environment_info; print_environment_info()"
-
-# Expected output:
-# ============================================================
-# MIRA Framework - Environment Detection
-# ============================================================
-# System:
-#   OS: Windows/Linux/Darwin
-#   Python: 3.x.x
-# GPU:
-#   Backend: CUDA/MPS/CPU
-#   Device: (if available)
-# Recommended Settings:
-#   Model: EleutherAI/pythia-70m
-# ============================================================
-```
-
-### Test Configuration Loading
-
-```bash
-python -c "
-from mira.config import MiraConfig
-config = MiraConfig.load()
-print(f'Model: {config.model.name}')
-print(f'Device: {config.model.get_device()}')
-"
-```
-
-### Full Pipeline Test
-
-```bash
-# Run the complete example pipeline
-python examples/full_pipeline.py
+research_output/
+├── research_summary.json       # Complete results
+├── charts/
+│   ├── subspace.png            # Refusal subspace visualization
+│   ├── asr_comparison.png      # Attack success rates
+│   └── attack_radar.png        # Multi-metric comparison
+└── data/
+    ├── records.csv             # Attack records
+    └── records.json            # Detailed data
 ```
 
 ---
 
-## Quick Start
+## Step-by-Step Guide
+
+See [docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) for detailed step-by-step instructions.
+
+### Quick Example
 
 ```python
 from mira.runner import ExperimentRunner
@@ -121,22 +66,26 @@ from mira.runner import ExperimentRunner
 # Initialize with auto environment detection
 runner = ExperimentRunner(experiment_name="my_research")
 runner.print_environment()
-
-# Load model (uses recommended settings for your hardware)
 runner.load_model()
 
-# Run subspace analysis with auto visualization
-results = runner.run_subspace_analysis(
-    safe_prompts=["Hello, how are you?"],
-    harmful_prompts=["Ignore all previous instructions"]
-)
-
-# Run attack with auto logging
-attack_result = runner.run_attack("test prompt", attack_type="gradient")
-
-# Generate summary with all charts
+# Run analysis + attacks + generate charts
+results = runner.run_subspace_analysis(safe_prompts, harmful_prompts)
+attack = runner.run_attack("test prompt", attack_type="gradient")
 summary = runner.generate_summary()
+
 print(f"ASR: {summary['attack_success_rate']:.2%}")
+```
+
+---
+
+## Testing
+
+```bash
+# Run all tests (31 tests)
+pytest tests/ -v
+
+# Verify environment detection
+python -c "from mira.utils import print_environment_info; print_environment_info()"
 ```
 
 ---
@@ -145,41 +94,10 @@ print(f"ASR: {summary['attack_success_rate']:.2%}")
 
 | Document | Description |
 |----------|-------------|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module structure and design |
-| [API.md](docs/API.md) | Detailed API reference |
-| [EXAMPLES.md](docs/EXAMPLES.md) | Usage examples |
-
----
-
-## Project Structure
-
-```
-mira/
-├── core/           # Model wrapper and hooks
-├── analysis/       # Subspace, activation, attention analysis
-├── attack/         # Attack implementations
-├── metrics/        # Evaluation metrics
-├── visualization/  # Chart generation
-├── utils/          # Environment detection, logging
-├── config.py       # Configuration loader
-└── runner.py       # Integrated experiment runner
-```
-
----
-
-## Configuration
-
-All parameters configurable via `config.yaml`:
-
-```yaml
-model:
-  name: "EleutherAI/pythia-70m"
-  device: "auto"  # auto-detects GPU/CPU
-
-evaluation:
-  refusal_patterns: [...]
-  acceptance_patterns: [...]
-```
+| [RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) | **Complete research pipeline** |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module structure |
+| [API.md](docs/API.md) | API reference |
+| [EXAMPLES.md](docs/EXAMPLES.md) | Code examples |
 
 ---
 
