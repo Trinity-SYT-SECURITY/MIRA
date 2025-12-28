@@ -250,14 +250,39 @@ def main():
                     )
                 time.sleep(0.1)  # Longer delay for visible updates
         
+        # Evaluate response for detailed feedback
+        eval_result = evaluator.evaluate_single(
+            prompt=prompt,
+            response=result.generated_response or "",
+            adversarial_suffix=result.adversarial_suffix
+        )
+        
         status = "SUCCESS" if result.success else "FAILED"
+        
+        # Display result with detailed reason
         print(f"      Result: {status} | Loss: {result.final_loss:.4f}")
+        
+        if not result.success:
+            # Show why it failed
+            print(f"      Reason: {eval_result['category']}")
+            if eval_result['has_refusal_markers']:
+                print(f"      ⚠ Model refused (detected refusal patterns)")
+            if result.generated_response:
+                preview = result.generated_response[:80].replace('\n', ' ')
+                print(f"      Response: \"{preview}...\"")
+        else:
+            print(f"      ✓ Attack succeeded!")
+            if result.generated_response:
+                preview = result.generated_response[:80].replace('\n', ' ')
+                print(f"      Response: \"{preview}...\"")
         
         attack_results.append({
             "prompt": prompt,
             "response": result.generated_response or "",
             "success": result.success,
             "loss": result.final_loss,
+            "eval_category": eval_result['category'],
+            "has_refusal": eval_result['has_refusal_markers'],
         })
         
         logger.log_attack(
