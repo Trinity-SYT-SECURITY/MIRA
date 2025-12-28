@@ -78,19 +78,28 @@ def main():
     
     print_banner()
     
-    # Configuration - all defaults, no arguments needed
-    model_name = "EleutherAI/pythia-70m"
-    output_base = "./results"
-    
-    TOTAL_PHASES = 7
-    
     # ================================================================
-    # PHASE 1: ENVIRONMENT
+    # PHASE 1: ENVIRONMENT DETECTION & MODEL SELECTION
     # ================================================================
     print_phase(1, TOTAL_PHASES, "ENVIRONMENT DETECTION")
     
     env = detect_environment()
     print_environment_info(env)
+    
+    # Interactive model selection
+    from mira.utils.model_selector import select_model_interactive
+    
+    # Check if .env specifies a model
+    env_model = os.getenv("MODEL_NAME")
+    
+    if env_model:
+        print(f"\n  📌 Using model from .env: {env_model}\n")
+        model_name = env_model
+    else:
+        # Interactive selection based on system capabilities
+        model_name = select_model_interactive()
+    
+    output_base = "./results"
     
     # ================================================================
     # PHASE 2: LIVE VISUALIZATION SERVER
