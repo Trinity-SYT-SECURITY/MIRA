@@ -818,6 +818,15 @@ DASHBOARD_HTML = '''
                 case 'complete':
                     showComplete(data.data);
                     break;
+                case 'embeddings':
+                    handleEmbeddings(data.data);
+                    break;
+                case 'transformer_trace':
+                    handleTransformerTrace(data.data);
+                    break;
+                case 'residual':
+                    handleResidualUpdate(data.data);
+                    break;
             }
         };
         
