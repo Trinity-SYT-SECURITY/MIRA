@@ -183,6 +183,91 @@ class LiveVisualizationServer:
         event_queue.put(event)
     
     @staticmethod
+    def send_transformer_trace(
+        trace_data: Dict[str, Any],
+        trace_type: str = "normal"  # "normal" or "adversarial"
+    ):
+        """Send complete transformer trace for comparison."""
+        event = VisualizationEvent(
+            event_type="transformer_trace",
+            data={
+                "trace_type": trace_type,
+                "trace": trace_data,
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
+    def send_embeddings(
+        tokens: List[str],
+        embeddings: List[List[float]],  # [seq_len, hidden_dim]
+    ):
+        """Send token embeddings."""
+        event = VisualizationEvent(
+            event_type="embeddings",
+            data={
+                "tokens": tokens,
+                "embeddings": embeddings,
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
+    def send_qkv_vectors(
+        layer_idx: int,
+        tokens: List[str],
+        query: List[List[float]],  # [seq_len, head_dim]
+        key: List[List[float]],
+        value: List[List[float]],
+    ):
+        """Send Q/K/V vectors for a layer."""
+        event = VisualizationEvent(
+            event_type="qkv",
+            data={
+                "layer": layer_idx,
+                "tokens": tokens,
+                "query": query,
+                "key": key,
+                "value": value,
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
+    def send_mlp_activations(
+        layer_idx: int,
+        activations: List[List[float]],  # [seq_len, intermediate_dim]
+        top_neurons: List[int],  # Indices of most active neurons
+    ):
+        """Send MLP activation data."""
+        event = VisualizationEvent(
+            event_type="mlp",
+            data={
+                "layer": layer_idx,
+                "activations": activations,
+                "top_neurons": top_neurons,
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
+    def send_residual_update(
+        layer_idx: int,
+        residual_norm: float,
+        delta_norm: float,  # Change from previous layer
+    ):
+        """Send residual stream update."""
+        event = VisualizationEvent(
+            event_type="residual",
+            data={
+                "layer": layer_idx,
+                "residual_norm": residual_norm,
+                "delta_norm": delta_norm,
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
     def send_complete(summary: Dict[str, Any]):
         """Send completion event."""
         event = VisualizationEvent(
