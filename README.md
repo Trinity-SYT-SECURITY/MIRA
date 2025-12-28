@@ -1,105 +1,80 @@
-# MIRA: Mechanistic Interpretability Research and Attack Framework
+# MIRA - Mechanistic Interpretability Research & Attack Framework
 
-A research framework for understanding and evaluating the security of Large Language Models through mechanistic interpretability.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+
+A research framework for analyzing and attacking LLM safety mechanisms using mechanistic interpretability.
 
 ## Features
 
-- **Subspace Analysis**: Identify refusal/acceptance decision boundaries
-- **Attack Strategies**: Gradient, rerouting, and proxy-based attacks
-- **Auto Visualization**: Publication-quality charts generated during experiments
-- **Cross-Platform**: Automatic OS and GPU detection (Windows/Linux/Mac)
+- **Subspace Analysis** - Find refusal/acceptance directions in activation space
+- **Gradient Attacks** - GCG-inspired adversarial suffix optimization  
+- **Rerouting Attacks** - Steer activations away from refusal direction
+- **Attack Probes** - 19 diverse attacks (jailbreak, encoding, injection, social)
+- **Flow Tracing** - Layer-by-layer attack path visualization
+- **Interactive HTML Reports** - Attention heatmaps and flow diagrams
 
----
-
-## Installation
+## Quick Start
 
 ```bash
-git clone https://github.com/Trinity-SYT-SECURITY/MIRA.git
-cd MIRA
+# Install
 pip install -e .
+
+# Run complete research pipeline
+python main.py
+
+# With options
+python main.py --model EleutherAI/pythia-70m --output ./results
 ```
 
----
+## Output Structure
 
-## Run Complete Research Pipeline
+Each run creates a timestamped directory:
+```
+results/
+└── run_20241229_021500/
+    ├── charts/
+    │   ├── subspace.png
+    │   └── asr.png
+    ├── html/
+    │   └── mira_report.html
+    ├── data/
+    │   ├── records.csv
+    │   └── records.json
+    └── summary.json
+```
 
-### One-Command Execution
+## Project Structure
+
+```
+mira/
+├── core/           # Model wrapper, hooks, config
+├── analysis/       # Subspace, activation, attention, logit lens
+├── attack/         # Gradient, rerouting, GCG, probes
+├── metrics/        # ASR, distance, probability
+├── visualization/  # Charts, HTML reports, flow viz
+└── utils/          # Environment, logging, data
+```
+
+## Example Scripts
 
 ```bash
-python examples/run_research.py --model EleutherAI/pythia-70m --output ./research_output
+python examples/run_research.py   # Full research pipeline
+python examples/run_pentest.py    # Penetration testing mode
+python examples/run_probes.py     # Attack probe testing
+python examples/run_interactive.py # HTML visualization
 ```
 
-This runs the **complete research workflow**:
-1. Environment detection (OS/GPU)
-2. Model loading
-3. Subspace analysis
-4. Attack experiments (Gradient + Rerouting)
-5. Metrics computation
-6. Chart generation
-7. Summary report
+## Citation
 
-### Output Files
-
+```bibtex
+@software{mira2024,
+  title = {MIRA: Mechanistic Interpretability Research & Attack Framework},
+  author = {Trinity-SYT-SECURITY},
+  year = {2024},
+  url = {https://github.com/Trinity-SYT-SECURITY/MIRA}
+}
 ```
-research_output/
-├── research_summary.json       # Complete results
-├── charts/
-│   ├── subspace.png            # Refusal subspace visualization
-│   ├── asr_comparison.png      # Attack success rates
-│   └── attack_radar.png        # Multi-metric comparison
-└── data/
-    ├── records.csv             # Attack records
-    └── records.json            # Detailed data
-```
-
----
-
-## Step-by-Step Guide
-
-See [docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) for detailed step-by-step instructions.
-
-### Quick Example
-
-```python
-from mira.runner import ExperimentRunner
-
-# Initialize with auto environment detection
-runner = ExperimentRunner(experiment_name="my_research")
-runner.print_environment()
-runner.load_model()
-
-# Run analysis + attacks + generate charts
-results = runner.run_subspace_analysis(safe_prompts, harmful_prompts)
-attack = runner.run_attack("test prompt", attack_type="gradient")
-summary = runner.generate_summary()
-
-print(f"ASR: {summary['attack_success_rate']:.2%}")
-```
-
----
-
-## Testing
-
-```bash
-# Run all tests (31 tests)
-pytest tests/ -v
-
-# Verify environment detection
-python -c "from mira.utils import print_environment_info; print_environment_info()"
-```
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) | **Complete research pipeline** |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module structure |
-| [API.md](docs/API.md) | API reference |
-| [EXAMPLES.md](docs/EXAMPLES.md) | Code examples |
-
----
 
 ## License
 
