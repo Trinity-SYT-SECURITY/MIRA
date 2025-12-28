@@ -1,0 +1,115 @@
+# MIRA Framework - Gitignore (framework-specific)
+# Excludes generated outputs and caches
+
+# ===================
+# Python
+# ===================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===================
+# Virtual Environments
+# ===================
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# ===================
+# IDE and Editors
+# ===================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ===================
+# Trained Models (DO NOT UPLOAD)
+# ===================
+models/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.gguf
+*.ggml
+*.h5
+*.ckpt
+*.model
+
+# HuggingFace cache
+.cache/
+~/.cache/huggingface/
+
+# ===================
+# Generated Outputs (DO NOT UPLOAD)
+# ===================
+results/
+outputs/
+charts/
+figures/
+
+# ===================
+# Test Data and Outputs
+# ===================
+test_results/
+test_outputs/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ===================
+# Jupyter Notebooks
+# ===================
+.ipynb_checkpoints/
+
+# ===================
+# OS Files
+# ===================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===================
+# Secrets and Config
+# ===================
+.env
+.env.local
+*.secret
+secrets/
+config.local.yaml
+
+# ===================
+# Temporary Files
+# ===================
+tmp/
+temp/
+*.tmp
+*.bak

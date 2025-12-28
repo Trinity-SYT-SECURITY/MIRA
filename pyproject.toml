@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mira"
+version = "0.1.0"
+description = "Mechanistic Interpretability Research and Attack Framework"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "matplotlib>=3.7.0",
+    "plotly>=5.15.0",
+    "pandas>=2.0.0",
+    "tqdm>=4.65.0",
+    "PyYAML>=6.0",
+    "seaborn>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "ruff>=0.0.270",
+]
+# For CPU-only environments (no GPU)
+cpu = [
+    "accelerate>=0.20.0",
+]
+# For quantization (low memory/CPU)
+quantization = [
+    "bitsandbytes>=0.40.0",
+    "auto-gptq>=0.4.0",
+    "autoawq>=0.1.0",
+]
+# For TransformerLens integration
+interpretability = [
+    "transformer-lens>=1.0.0",
+    "circuitsvis>=0.1.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/systematic/mira"
+
+[project.scripts]
+mira = "mira.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mira*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I", "N"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
