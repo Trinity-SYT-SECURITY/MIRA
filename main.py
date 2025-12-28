@@ -173,9 +173,9 @@ def main():
   ┌──────────────────────────────────────────────────────────────┐
   │ SUBSPACE ANALYSIS RESULTS                                    │
   ├──────────────────────────────────────────────────────────────┤
-  │  Probe Accuracy:   {probe_result.probe_accuracy:>38.1%}      │
-  │  Refusal Norm:     {refusal_norm:>38.4f}                     │
-  │  Target Layer:     {layer_idx:>38}                           │
+  │  Probe Accuracy:   {probe_result.probe_accuracy:>38.1%}  │
+  │  Refusal Norm:     {refusal_norm:>38.4f}  │
+  │  Target Layer:     {layer_idx:>38}  │
   └──────────────────────────────────────────────────────────────┘
     """)
     
