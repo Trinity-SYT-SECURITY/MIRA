@@ -35,7 +35,7 @@ from mira.utils import detect_environment, print_environment_info
 from mira.utils.data import load_harmful_prompts, load_safe_prompts
 from mira.utils.experiment_logger import ExperimentLogger
 from mira.core import ModelWrapper
-from mira.analysis import SubspaceAnalyzer
+from mira.analysis import SubspaceAnalyzer, TransformerTracer
 from mira.attack import GradientAttack
 from mira.attack.probes import ProbeRunner, ALL_PROBES, get_all_categories
 from mira.metrics import AttackSuccessEvaluator
@@ -204,11 +204,34 @@ def main():
     evaluator = AttackSuccessEvaluator()
     attack = GradientAttack(model, suffix_length=15)
     
+    # Initialize transformer tracer for internal visualization
+    tracer = TransformerTracer(model)
+    
     attack_results = []
     for i, prompt in enumerate(test_prompts):
         print(f"\n  [{i+1}/{len(test_prompts)}] {prompt[:45]}...")
         
-        # Send initial state to live viz
+        # Trace normal prompt BEFORE attack
+        if server:
+            try:
+                normal_ids = model.tokenizer.encode(prompt, return_tensors="pt")[0]
+                normal_trace = tracer.trace_forward(normal_ids)
+                
+                # Send embeddings to dashboard
+                server.send_embeddings(
+                    tokens=normal_trace.tokens,
+                    embeddings=normal_trace.embeddings.detach().cpu().numpy().tolist()
+                )
+                
+                # Send transformer trace
+                server.send_transformer_trace(
+                    trace_data=normal_trace.to_dict(),
+                    trace_type="normal"
+                )
+            except Exception as e:
+                print(f"      [Trace Error: {e}]")
+        
+        # Send initial attack state to live viz
         if server:
             server.send_attack_step(
                 step=0,
@@ -227,6 +250,34 @@ def main():
         
         # Run attack (simplified - use built-in optimize)
         result = attack.optimize(prompt, num_steps=30, verbose=False)
+        
+        # Trace adversarial prompt AFTER attack
+        if server and result.adversarial_suffix:
+            try:
+                adv_prompt = prompt + " " + result.adversarial_suffix
+                adv_ids = model.tokenizer.encode(adv_prompt, return_tensors="pt")[0]
+                adv_trace = tracer.trace_forward(adv_ids)
+                
+                # Send adversarial trace
+                server.send_transformer_trace(
+                    trace_data=adv_trace.to_dict(),
+                    trace_type="adversarial"
+                )
+                
+                # Compare and send layer differences
+                for layer_idx in range(min(len(normal_trace.layers), len(adv_trace.layers))):
+                    normal_layer = normal_trace.layers[layer_idx]
+                    adv_layer = adv_trace.layers[layer_idx]
+                    
+                    residual_diff = float((adv_layer.residual_post - normal_layer.residual_post).norm())
+                    
+                    server.send_residual_update(
+                        layer_idx=layer_idx,
+                        residual_norm=float(adv_layer.residual_post.norm()),
+                        delta_norm=residual_diff
+                    )
+            except Exception as e:
+                print(f"      [Trace Error: {e}]")
         
         # Send progress updates to live viz (simulate steps for visual feedback)
         if server:
