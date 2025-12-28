@@ -924,6 +924,90 @@ DASHBOARD_HTML = '''
             document.querySelector('.pulse').style.background = '#0f0';
         }
         
+        // Transformer visualization handlers
+        function handleEmbeddings(data) {
+            const tokenList = document.getElementById('token-list');
+            const canvas = document.getElementById('embeddings-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            
+            tokenList.innerHTML = data.tokens.map(t => `<span class="token">${t}</span>`).join('');
+            
+            const embeddings = data.embeddings;
+            if (!embeddings || embeddings.length === 0) return;
+            
+            const seqLen = embeddings.length;
+            const hiddenDim = embeddings[0].length;
+            const cellWidth = canvas.width / Math.min(hiddenDim, 100);
+            const cellHeight = canvas.height / seqLen;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            for (let i = 0; i < seqLen; i++) {
+                for (let j = 0; j < Math.min(hiddenDim, 100); j++) {
+                    const val = embeddings[i][j];
+                    const intensity = Math.min(Math.abs(val) * 2, 1);
+                    const color = val > 0 ? `rgba(0, 255, 255, ${intensity})` : `rgba(255, 68, 68, ${intensity})`;
+                    ctx.fillStyle = color;
+                    ctx.fillRect(j * cellWidth, i * cellHeight, cellWidth, cellHeight);
+                }
+            }
+            
+            log('📊 Token embeddings visualized', 'info');
+        }
+        
+        function handleTransformerTrace(data) {
+            const traceType = data.trace_type;
+            const trace = data.trace;
+            const targetId = traceType === 'normal' ? 'normal-info' : 'adv-info';
+            const infoDiv = document.getElementById(targetId);
+            
+            if (!trace || !trace.layers) {
+                infoDiv.innerHTML = 'No trace data';
+                return;
+            }
+            
+            let html = `<div style="font-size: 0.8em;">`;
+            html += `<div><strong>Tokens:</strong> ${trace.tokens ? trace.tokens.length : 0}</div>`;
+            html += `<div><strong>Layers:</strong> ${trace.layers.length}</div>`;
+            if (trace.layers.length > 0) {
+                const lastLayer = trace.layers[trace.layers.length - 1];
+                html += `<div><strong>Residual Norm:</strong> ${lastLayer.residual_norm ? lastLayer.residual_norm.toFixed(4) : 'N/A'}</div>`;
+            }
+            html += `</div>`;
+            infoDiv.innerHTML = html;
+            
+            log(`🔄 ${traceType} trace received`, 'info');
+        }
+        
+        function handleResidualUpdate(data) {
+            const svg = d3.select('#residual-svg');
+            const width = parseInt(svg.style('width'));
+            const height = 150;
+            const layerIdx = data.layer_idx;
+            const residualNorm = data.residual_norm;
+            const deltaNorm = data.delta_norm;
+            const x = 50 + (layerIdx * 80);
+            const y = height / 2;
+            const radius = Math.min(residualNorm * 20, 40);
+            
+            svg.append('circle')
+                .attr('cx', x).attr('cy', y).attr('r', radius)
+                .attr('fill', 'rgba(0, 255, 255, 0.2)')
+                .attr('stroke', '#0ff').attr('stroke-width', 2);
+            
+            svg.append('text')
+                .attr('x', x).attr('y', y)
+                .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+                .attr('fill', '#0ff').attr('font-size', '12px').text(`L${layerIdx}`);
+            
+            svg.append('text')
+                .attr('x', x).attr('y', y + radius + 15)
+                .attr('text-anchor', 'middle')
+                .attr('fill', deltaNorm > 0.5 ? '#f44' : '#0ff')
+                .attr('font-size', '10px').text(`Δ ${deltaNorm.toFixed(3)}`);
+        }
+        
         drawChart();
     </script>
 </body>
