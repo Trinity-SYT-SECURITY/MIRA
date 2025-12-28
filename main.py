@@ -168,14 +168,15 @@ def main():
     
     probe_result = analyzer.train_probe(safe_prompts, harmful_prompts)
     
+    refusal_norm = float(probe_result.refusal_direction.norm())
     print(f"""
-  ┌───────────────────────────────────────────────────────────────────────────┐
-  │ SUBSPACE ANALYSIS RESULTS                                                 │
-  ├───────────────────────────────────────────────────────────────────────────┤
-  │ Probe Accuracy:     {probe_result.probe_accuracy:>36.1%}                  │
-  │ Refusal Norm:       {float(probe_result.refusal_direction.norm()):>36.4f} │
-  │ Target Layer:       {layer_idx:>36}                                       │
-  └───────────────────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────────┐
+  │ SUBSPACE ANALYSIS RESULTS                                    │
+  ├──────────────────────────────────────────────────────────────┤
+  │  Probe Accuracy:   {probe_result.probe_accuracy:>38.1%}      │
+  │  Refusal Norm:     {refusal_norm:>38.4f}                     │
+  │  Target Layer:     {layer_idx:>38}                           │
+  └──────────────────────────────────────────────────────────────┘
     """)
     
     # Generate subspace chart
@@ -352,19 +353,19 @@ def main():
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                       RESEARCH COMPLETE                              ║
 ╠══════════════════════════════════════════════════════════════════════╣
-║  Duration:           {elapsed:>47.1f}s ║
-║  Model:              {model.model_name:<47} ║
+║  Duration:           {elapsed:>47.1f}s                               ║
+║  Model:              {model.model_name:<47}                          ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  RESULTS                                                             ║
-║    Probe Accuracy:   {probe_result.probe_accuracy:>47.1%} ║
-║    Gradient ASR:     {gradient_metrics.asr:>47.1%} ║
-║    Probe Bypass:     {probe_summary.get('bypass_rate', 0):>46.1%} ║
+║    Probe Accuracy:   {probe_result.probe_accuracy:>47.1%}            ║
+║    Gradient ASR:     {gradient_metrics.asr:>47.1%}                   ║
+║    Probe Bypass:     {probe_summary.get('bypass_rate', 0):>46.1%}    ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  LIVE DASHBOARD                                                      ║
 ║    🌐 http://localhost:5000 (keep running to view)                   ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  OUTPUT FILES                                                        ║
-║    {str(output_dir.absolute())[:62]:<62} ║
+║    {str(output_dir.absolute())[:62]:<62}                             ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
   Press Ctrl+C to exit (dashboard will close)

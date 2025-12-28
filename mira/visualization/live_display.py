@@ -376,11 +376,12 @@ def display_subspace_analysis(
     sep_visual = "─" * sep_bar
     print(f"  │   ●{sep_visual}●                               │")
     
-    print(f"""  │                                                         │
-  │   Probe Accuracy:     {probe_accuracy:>30.2%} │
-  │   Refusal Direction:  {refusal_norm:>30.4f} │
-  │   Acceptance Dir:     {acceptance_norm:>30.4f} │
-  │   Separation:         {separation:>30.4f} │
+    print(f"""  
+  │                                                         │
+  │   Probe Accuracy:     {probe_accuracy:>30.2%}           │
+  │   Refusal Direction:  {refusal_norm:>30.4f}             │
+  │   Acceptance Dir:     {acceptance_norm:>30.4f}          │
+  │   Separation:         {separation:>30.4f}               │
   │                                                         │
   └─────────────────────────────────────────────────────────┘
     """)

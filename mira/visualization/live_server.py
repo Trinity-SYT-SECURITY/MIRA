@@ -192,228 +192,426 @@ class LiveVisualizationServer:
         event_queue.put(event)
 
 
-# HTML Dashboard with D3.js visualization
+# HTML Dashboard - MIRA Cybersecurity Neural Attack Monitor
 DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MIRA - Live Attack Visualization</title>
+    <title>MIRA Neural Attack Monitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
+        :root {
+            --primary: #0ff;
+            --secondary: #f0f;
+            --warning: #ff0;
+            --danger: #f44;
+            --success: #0f0;
+            --bg-dark: #0a0a0f;
+            --bg-panel: rgba(15, 25, 35, 0.9);
+            --border: rgba(0, 255, 255, 0.2);
+        }
+        
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body {
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #e0e0e0;
+            font-family: 'Space Mono', monospace;
+            background: var(--bg-dark);
+            color: #ddd;
             min-height: 100vh;
+            overflow-x: hidden;
         }
+        
+        /* Animated background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                linear-gradient(90deg, rgba(0,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(rgba(0,255,255,0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: gridMove 20s linear infinite;
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+        
+        /* Header */
         .header {
-            background: rgba(0,0,0,0.3);
-            padding: 20px;
+            background: linear-gradient(180deg, var(--bg-panel) 0%, transparent 100%);
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: conic-gradient(from 0deg, var(--primary), var(--secondary), var(--primary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: rotateGlow 3s linear infinite;
+        }
+        
+        @keyframes rotateGlow {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+        }
+        
+        .logo-icon::after {
+            content: '🧠';
+            font-size: 24px;
+        }
+        
+        .logo h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.8em;
+            color: var(--primary);
+            text-shadow: 0 0 20px var(--primary);
+            letter-spacing: 3px;
+        }
+        
+        .header-stats {
+            display: flex;
+            gap: 30px;
+        }
+        
+        .header-stat {
             text-align: center;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .header h1 {
-            font-size: 2em;
-            background: linear-gradient(90deg, #00d4ff, #7b2ff7);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        
+        .header-stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em;
+            color: var(--primary);
         }
-        .header .subtitle { color: #888; margin-top: 5px; }
-        .container {
+        
+        .header-stat-label {
+            font-size: 0.7em;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        /* Main Grid */
+        .dashboard {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: auto auto auto;
+            gap: 15px;
             padding: 20px;
-            max-width: 1600px;
+            max-width: 1800px;
             margin: 0 auto;
         }
+        
         .panel {
-            background: rgba(255,255,255,0.05);
-            border-radius: 12px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
             padding: 20px;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .panel h2 {
-            font-size: 1.2em;
-            margin-bottom: 15px;
-            color: #00d4ff;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .panel h2::before {
-            content: '';
-            width: 4px;
-            height: 20px;
-            background: #00d4ff;
-            border-radius: 2px;
+            position: relative;
+            overflow: hidden;
         }
         
-        /* Layer Flow */
-        .layer-flow { height: 300px; }
-        .layer-bar {
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+        }
+        
+        .panel-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.9em;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 15px;
             display: flex;
             align-items: center;
-            margin: 8px 0;
             gap: 10px;
         }
-        .layer-label { width: 60px; font-size: 0.9em; color: #888; }
-        .layer-bar-container {
-            flex: 1;
-            height: 24px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 12px;
-            overflow: hidden;
+        
+        .panel-title::before {
+            content: '◆';
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        /* Neural Layer Visualization */
+        .neural-layers { grid-column: 1; grid-row: 1 / 3; }
+        
+        .layer-node {
+            display: flex;
+            align-items: center;
+            margin: 12px 0;
+            gap: 15px;
+        }
+        
+        .node-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            transition: all 0.3s;
             position: relative;
         }
-        .layer-bar-fill {
-            height: 100%;
-            border-radius: 12px;
-            transition: width 0.3s ease;
-        }
-        .refusal { background: linear-gradient(90deg, #ff4757, #ff6b81); }
-        .acceptance { background: linear-gradient(90deg, #2ed573, #7bed9f); }
-        .neutral { background: linear-gradient(90deg, #ffa502, #ff7f50); }
         
-        /* Attack Progress */
-        .attack-progress { height: 200px; }
-        #loss-chart { width: 100%; height: 150px; }
-        .attack-stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin-top: 15px;
+        .node-circle.active {
+            background: rgba(0, 255, 255, 0.2);
+            box-shadow: 0 0 20px var(--primary);
         }
-        .stat-box {
-            background: rgba(0,0,0,0.3);
+        
+        .node-circle.refusal {
+            border-color: var(--danger);
+            box-shadow: 0 0 15px var(--danger);
+        }
+        
+        .node-circle.acceptance {
+            border-color: var(--success);
+            box-shadow: 0 0 15px var(--success);
+        }
+        
+        .node-bar {
+            flex: 1;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .node-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        .node-bar-fill.refusal { background: linear-gradient(90deg, var(--danger), #ff8866); }
+        .node-bar-fill.acceptance { background: linear-gradient(90deg, var(--success), #88ff88); }
+        .node-bar-fill.neutral { background: linear-gradient(90deg, var(--warning), #ffcc00); }
+        
+        .node-value {
+            width: 50px;
+            text-align: right;
+            font-size: 0.8em;
+            color: #888;
+        }
+        
+        /* Attack Console */
+        .attack-console { grid-column: 2; grid-row: 1; }
+        
+        .console-output {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
             padding: 15px;
+            font-size: 0.85em;
+            height: 200px;
+            overflow-y: auto;
+        }
+        
+        .console-line {
+            margin: 3px 0;
+            opacity: 0.9;
+        }
+        
+        .console-line.success { color: var(--success); }
+        .console-line.error { color: var(--danger); }
+        .console-line.info { color: var(--primary); }
+        
+        /* Loss Chart */
+        .loss-chart { grid-column: 3; grid-row: 1; }
+        
+        #chart-svg {
+            width: 100%;
+            height: 200px;
+        }
+        
+        /* Metrics */
+        .metrics { grid-column: 2 / 4; grid-row: 2; }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+        
+        .metric-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
             border-radius: 8px;
+            padding: 20px;
             text-align: center;
         }
-        .stat-value { font-size: 1.5em; font-weight: bold; color: #00d4ff; }
-        .stat-label { font-size: 0.8em; color: #888; margin-top: 5px; }
         
-        /* Attention Heatmap */
-        .attention-heatmap { height: 350px; overflow: auto; }
-        #heatmap-svg { width: 100%; min-height: 300px; }
-        .heatmap-cell { stroke: rgba(255,255,255,0.1); stroke-width: 0.5; }
+        .metric-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2em;
+            color: var(--primary);
+            text-shadow: 0 0 10px var(--primary);
+        }
         
-        /* Token Probabilities */
-        .token-probs { }
-        .token-bar {
-            display: flex;
-            align-items: center;
-            margin: 6px 0;
-            gap: 10px;
+        .metric-label {
+            font-size: 0.7em;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 5px;
         }
-        .token-text { 
-            width: 80px; 
-            font-family: monospace;
-            font-size: 0.9em;
-            color: #7bed9f;
-            text-overflow: ellipsis;
-            overflow: hidden;
-        }
-        .token-prob-bar {
-            flex: 1;
-            height: 20px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        .token-prob-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #7b2ff7, #00d4ff);
-            border-radius: 10px;
-            transition: width 0.3s ease;
-        }
-        .token-prob-value { width: 50px; text-align: right; font-size: 0.9em; color: #888; }
         
-        /* Status */
+        /* Suffix Display */
+        .suffix-panel { grid-column: 1 / 4; grid-row: 3; }
+        
+        .suffix-display {
+            background: #000;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 20px;
+            font-size: 1.1em;
+            color: var(--warning);
+            word-break: break-all;
+            min-height: 60px;
+        }
+        
+        /* Status Bar */
         .status-bar {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(0,0,0,0.8);
-            padding: 10px 20px;
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border);
+            padding: 10px 30px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 0.9em;
         }
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            background: #2ed573;
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .pulse {
+            width: 12px;
+            height: 12px;
+            background: var(--success);
             border-radius: 50%;
-            animation: pulse 1.5s infinite;
+            animation: pulse 1.5s ease infinite;
         }
+        
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
         }
-        .full-width { grid-column: 1 / -1; }
+        
+        .footer-text {
+            font-size: 0.8em;
+            color: #555;
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🔬 MIRA Live Visualization</h1>
-        <div class="subtitle">Real-time LLM Attack Monitoring</div>
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <h1>MIRA NEURAL MONITOR</h1>
+        </div>
+        <div class="header-stats">
+            <div class="header-stat">
+                <div class="header-stat-value" id="events-count">0</div>
+                <div class="header-stat-label">Events</div>
+            </div>
+            <div class="header-stat">
+                <div class="header-stat-value" id="step-count">0</div>
+                <div class="header-stat-label">Steps</div>
+            </div>
+            <div class="header-stat">
+                <div class="header-stat-value" id="best-loss-header">--</div>
+                <div class="header-stat-label">Best Loss</div>
+            </div>
+        </div>
     </div>
     
-    <div class="container">
-        <div class="panel layer-flow">
-            <h2>Layer Processing Flow</h2>
+    <div class="dashboard">
+        <div class="panel neural-layers">
+            <div class="panel-title">Neural Layer Flow</div>
             <div id="layer-container"></div>
         </div>
         
-        <div class="panel attack-progress">
-            <h2>Attack Optimization</h2>
-            <svg id="loss-chart"></svg>
-            <div class="attack-stats">
-                <div class="stat-box">
-                    <div class="stat-value" id="current-step">0</div>
-                    <div class="stat-label">Step</div>
+        <div class="panel attack-console">
+            <div class="panel-title">Attack Console</div>
+            <div class="console-output" id="console"></div>
+        </div>
+        
+        <div class="panel loss-chart">
+            <div class="panel-title">Loss Trajectory</div>
+            <svg id="chart-svg"></svg>
+        </div>
+        
+        <div class="panel metrics">
+            <div class="panel-title">Attack Metrics</div>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value" id="current-step">0</div>
+                    <div class="metric-label">Current Step</div>
                 </div>
-                <div class="stat-box">
-                    <div class="stat-value" id="current-loss">--</div>
-                    <div class="stat-label">Loss</div>
+                <div class="metric-card">
+                    <div class="metric-value" id="current-loss">--</div>
+                    <div class="metric-label">Current Loss</div>
                 </div>
-                <div class="stat-box">
-                    <div class="stat-value" id="best-loss">--</div>
-                    <div class="stat-label">Best Loss</div>
+                <div class="metric-card">
+                    <div class="metric-value" id="best-loss">--</div>
+                    <div class="metric-label">Best Loss</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="asr">0%</div>
+                    <div class="metric-label">Attack Success</div>
                 </div>
             </div>
         </div>
         
-        <div class="panel attention-heatmap">
-            <h2>Attention Weights</h2>
-            <svg id="heatmap-svg"></svg>
-        </div>
-        
-        <div class="panel token-probs">
-            <h2>Token Probabilities</h2>
-            <div id="token-container"></div>
-        </div>
-        
-        <div class="panel full-width">
-            <h2>Current Suffix</h2>
-            <div id="suffix-display" style="font-family: monospace; font-size: 1.2em; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 8px; word-break: break-all;">
-                Waiting for attack...
-            </div>
+        <div class="panel suffix-panel">
+            <div class="panel-title">Adversarial Suffix</div>
+            <div class="suffix-display" id="suffix">[ Awaiting attack initialization... ]</div>
         </div>
     </div>
     
     <div class="status-bar">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <div class="status-dot"></div>
-            <span id="status-text">Connected - Waiting for events...</span>
+        <div class="status-indicator">
+            <div class="pulse"></div>
+            <span id="status">Connecting to attack pipeline...</span>
         </div>
-        <div id="event-count">Events: 0</div>
+        <div class="footer-text">MIRA Framework v1.0 | Neural Attack Monitor</div>
     </div>
     
     <script>
@@ -421,177 +619,134 @@ DASHBOARD_HTML = '''
         let lossHistory = [];
         let bestLoss = Infinity;
         
-        // Setup SSE connection
         const evtSource = new EventSource('/api/events');
         
-        evtSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
+        function log(msg, type = 'info') {
+            const console = document.getElementById('console');
+            const line = document.createElement('div');
+            line.className = 'console-line ' + type;
+            line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+            console.appendChild(line);
+            console.scrollTop = console.scrollHeight;
+        }
+        
+        log('Neural monitor initialized', 'success');
+        
+        evtSource.onmessage = function(e) {
+            const data = JSON.parse(e.data);
             if (data.event_type === 'ping') return;
             
             eventCount++;
-            document.getElementById('event-count').textContent = `Events: ${eventCount}`;
-            document.getElementById('status-text').textContent = `Receiving: ${data.event_type}`;
+            document.getElementById('events-count').textContent = eventCount;
             
-            handleEvent(data);
-        };
-        
-        function handleEvent(event) {
-            switch(event.event_type) {
+            switch(data.event_type) {
                 case 'layer':
-                    updateLayerFlow(event.data);
+                    updateLayer(data.data);
                     break;
                 case 'attack_step':
-                    updateAttackProgress(event.data);
-                    break;
-                case 'attention':
-                    updateHeatmap(event.data);
-                    break;
-                case 'token':
-                    updateTokenProbs(event.data);
+                    updateAttack(data.data);
                     break;
                 case 'complete':
-                    showComplete(event.data);
+                    showComplete(data.data);
                     break;
             }
-        }
+        };
         
-        function updateLayerFlow(data) {
+        function updateLayer(data) {
             const container = document.getElementById('layer-container');
-            const layerId = `layer-${data.layer}`;
-            let elem = document.getElementById(layerId);
+            let node = document.getElementById('node-' + data.layer);
             
-            if (!elem) {
-                elem = document.createElement('div');
-                elem.id = layerId;
-                elem.className = 'layer-bar';
-                elem.innerHTML = `
-                    <div class="layer-label">Layer ${data.layer}</div>
-                    <div class="layer-bar-container">
-                        <div class="layer-bar-fill ${data.direction}" style="width: 0%"></div>
-                    </div>
+            if (!node) {
+                node = document.createElement('div');
+                node.id = 'node-' + data.layer;
+                node.className = 'layer-node';
+                node.innerHTML = `
+                    <div class="node-circle">L${data.layer}</div>
+                    <div class="node-bar"><div class="node-bar-fill"></div></div>
+                    <div class="node-value">0%</div>
                 `;
-                container.appendChild(elem);
+                container.appendChild(node);
             }
             
             const score = Math.max(data.refusal_score, data.acceptance_score);
             const pct = Math.min(score * 100, 100);
-            elem.querySelector('.layer-bar-fill').style.width = pct + '%';
-            elem.querySelector('.layer-bar-fill').className = `layer-bar-fill ${data.direction}`;
+            const circle = node.querySelector('.node-circle');
+            const fill = node.querySelector('.node-bar-fill');
+            const value = node.querySelector('.node-value');
+            
+            circle.className = 'node-circle active ' + data.direction;
+            fill.className = 'node-bar-fill ' + data.direction;
+            fill.style.width = pct + '%';
+            value.textContent = pct.toFixed(0) + '%';
         }
         
-        function updateAttackProgress(data) {
+        function updateAttack(data) {
             document.getElementById('current-step').textContent = data.step;
+            document.getElementById('step-count').textContent = data.step;
             document.getElementById('current-loss').textContent = data.loss.toFixed(4);
-            document.getElementById('suffix-display').textContent = data.suffix || '...';
+            document.getElementById('suffix').textContent = data.suffix || '...';
             
             lossHistory.push(data.loss);
-            if (data.loss < bestLoss) bestLoss = data.loss;
+            if (data.loss < bestLoss) {
+                bestLoss = data.loss;
+                log('New best loss: ' + data.loss.toFixed(4), 'success');
+            }
             document.getElementById('best-loss').textContent = bestLoss.toFixed(4);
+            document.getElementById('best-loss-header').textContent = bestLoss.toFixed(4);
+            document.getElementById('status').textContent = 'Processing step ' + data.step + '...';
             
-            drawLossChart();
+            drawChart();
         }
         
-        function drawLossChart() {
-            const svg = d3.select('#loss-chart');
+        function drawChart() {
+            const svg = d3.select('#chart-svg');
             svg.selectAll('*').remove();
             
-            const width = svg.node().getBoundingClientRect().width;
-            const height = 150;
-            const margin = {top: 10, right: 10, bottom: 20, left: 40};
+            const rect = svg.node().getBoundingClientRect();
+            const w = rect.width, h = rect.height;
+            const m = {t: 20, r: 20, b: 30, l: 50};
             
-            const x = d3.scaleLinear()
-                .domain([0, Math.max(lossHistory.length - 1, 1)])
-                .range([margin.left, width - margin.right]);
+            const x = d3.scaleLinear().domain([0, Math.max(lossHistory.length - 1, 1)]).range([m.l, w - m.r]);
+            const y = d3.scaleLinear().domain([0, d3.max(lossHistory) || 1]).nice().range([h - m.b, m.t]);
             
-            const y = d3.scaleLinear()
-                .domain([0, d3.max(lossHistory) || 1])
-                .nice()
-                .range([height - margin.bottom, margin.top]);
+            // Grid
+            svg.append('g').attr('transform', `translate(${m.l},0)`)
+                .call(d3.axisLeft(y).ticks(4).tickSize(-w + m.l + m.r))
+                .attr('color', '#222');
             
-            const line = d3.line()
-                .x((d, i) => x(i))
-                .y(d => y(d));
+            // Area
+            const area = d3.area().x((d,i) => x(i)).y0(h - m.b).y1(d => y(d));
+            svg.append('path').datum(lossHistory)
+                .attr('fill', 'url(#gradient)')
+                .attr('d', area);
             
-            svg.append('path')
-                .datum(lossHistory)
+            // Gradient
+            const defs = svg.append('defs');
+            const grad = defs.append('linearGradient').attr('id', 'gradient').attr('x1', '0%').attr('y1', '0%').attr('x2', '0%').attr('y2', '100%');
+            grad.append('stop').attr('offset', '0%').attr('stop-color', '#0ff').attr('stop-opacity', 0.5);
+            grad.append('stop').attr('offset', '100%').attr('stop-color', '#0ff').attr('stop-opacity', 0);
+            
+            // Line
+            const line = d3.line().x((d,i) => x(i)).y(d => y(d));
+            svg.append('path').datum(lossHistory)
                 .attr('fill', 'none')
-                .attr('stroke', '#00d4ff')
+                .attr('stroke', '#0ff')
                 .attr('stroke-width', 2)
                 .attr('d', line);
             
-            svg.append('g')
-                .attr('transform', `translate(0,${height - margin.bottom})`)
-                .call(d3.axisBottom(x).ticks(5))
-                .attr('color', '#888');
-            
-            svg.append('g')
-                .attr('transform', `translate(${margin.left},0)`)
-                .call(d3.axisLeft(y).ticks(3))
-                .attr('color', '#888');
-        }
-        
-        function updateHeatmap(data) {
-            const svg = d3.select('#heatmap-svg');
-            svg.selectAll('*').remove();
-            
-            const tokens = data.tokens;
-            const weights = data.weights;
-            const n = tokens.length;
-            const cellSize = Math.min(25, 300 / n);
-            
-            const colorScale = d3.scaleSequential(d3.interpolateViridis)
-                .domain([0, 1]);
-            
-            for (let i = 0; i < n; i++) {
-                for (let j = 0; j < n; j++) {
-                    svg.append('rect')
-                        .attr('x', j * cellSize + 60)
-                        .attr('y', i * cellSize + 20)
-                        .attr('width', cellSize - 1)
-                        .attr('height', cellSize - 1)
-                        .attr('fill', colorScale(weights[i]?.[j] || 0))
-                        .attr('class', 'heatmap-cell');
-                }
-            }
-            
-            // Token labels
-            tokens.forEach((t, i) => {
-                svg.append('text')
-                    .attr('x', 55)
-                    .attr('y', i * cellSize + cellSize/2 + 20)
-                    .attr('text-anchor', 'end')
-                    .attr('fill', '#888')
-                    .attr('font-size', '10px')
-                    .text(t.slice(0, 6));
-            });
-        }
-        
-        function updateTokenProbs(data) {
-            const container = document.getElementById('token-container');
-            container.innerHTML = '';
-            
-            (data.top_tokens || []).slice(0, 8).forEach(([token, prob]) => {
-                const div = document.createElement('div');
-                div.className = 'token-bar';
-                div.innerHTML = `
-                    <div class="token-text">${token}</div>
-                    <div class="token-prob-bar">
-                        <div class="token-prob-fill" style="width: ${prob * 100}%"></div>
-                    </div>
-                    <div class="token-prob-value">${(prob * 100).toFixed(1)}%</div>
-                `;
-                container.appendChild(div);
-            });
+            // Axes
+            svg.append('g').attr('transform', `translate(0,${h - m.b})`).call(d3.axisBottom(x).ticks(5)).attr('color', '#555');
+            svg.append('g').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4)).attr('color', '#555');
         }
         
         function showComplete(data) {
-            document.getElementById('status-text').textContent = 
-                `Complete! ASR: ${(data.asr * 100).toFixed(1)}%`;
-            document.querySelector('.status-dot').style.background = '#2ed573';
+            document.getElementById('status').textContent = 'Attack complete!';
+            document.getElementById('asr').textContent = ((data.asr || 0) * 100).toFixed(0) + '%';
+            log('Attack pipeline complete | ASR: ' + ((data.asr || 0) * 100).toFixed(1) + '%', 'success');
+            document.querySelector('.pulse').style.background = '#0f0';
         }
         
-        // Initialize
-        drawLossChart();
+        drawChart();
     </script>
 </body>
 </html>
