@@ -137,22 +137,30 @@ def main():
     probe_result = analyzer.train_probe(safe_prompts, harmful_prompts)
     
     print(f"""
-  ┌────────────────────────────────────────────────────────────┐
-  │ SUBSPACE ANALYSIS RESULTS                                  │
-  ├────────────────────────────────────────────────────────────┤
-  │ Probe Accuracy:     {probe_result.probe_accuracy:>36.1%} │
+  ┌───────────────────────────────────────────────────────────────────────────┐
+  │ SUBSPACE ANALYSIS RESULTS                                                 │
+  ├───────────────────────────────────────────────────────────────────────────┤
+  │ Probe Accuracy:     {probe_result.probe_accuracy:>36.1%}                  │
   │ Refusal Norm:       {float(probe_result.refusal_direction.norm()):>36.4f} │
-  │ Target Layer:       {layer_idx:>36} │
-  └────────────────────────────────────────────────────────────┘
+  │ Target Layer:       {layer_idx:>36}                                       │
+  └───────────────────────────────────────────────────────────────────────────┘
     """)
     
     # Generate subspace chart
     print("  Generating subspace chart...", end=" ", flush=True)
-    safe_acts = analyzer.collect_activations(safe_prompts)
-    harmful_acts = analyzer.collect_activations(harmful_prompts)
-    plot_subspace_2d(safe_acts, harmful_acts, probe_result.refusal_direction,
-                     "Refusal Subspace", str(charts_dir / "subspace.png"))
-    print("SAVED")
+    try:
+        safe_acts = analyzer.collect_activations(safe_prompts)
+        harmful_acts = analyzer.collect_activations(harmful_prompts)
+        plot_subspace_2d(
+            safe_embeddings=safe_acts, 
+            unsafe_embeddings=harmful_acts, 
+            refusal_direction=probe_result.refusal_direction,
+            title="Refusal Subspace", 
+            save_path=str(charts_dir / "subspace.png"),
+        )
+        print("SAVED")
+    except Exception as e:
+        print(f"SKIPPED ({str(e)[:30]})")
     
     # ================================================================
     # PHASE 4: GRADIENT ATTACKS
@@ -192,13 +200,13 @@ def main():
     ])
     
     print(f"""
-  ┌────────────────────────────────────────────────────────────┐
-  │ GRADIENT ATTACK RESULTS                                    │
-  ├────────────────────────────────────────────────────────────┤
-  │ Attack Success Rate:  {gradient_metrics.asr:>34.1%} │
+  ┌──────────────────────────────────────────────────────────────┐
+  │ GRADIENT ATTACK RESULTS                                      │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Attack Success Rate:  {gradient_metrics.asr:>34.1%}          │
   │ Refusal Rate:         {gradient_metrics.refusal_rate:>34.1%} │
-  │ Total Attacks:        {gradient_metrics.total_attacks:>34} │
-  └────────────────────────────────────────────────────────────┘
+  │ Total Attacks:        {gradient_metrics.total_attacks:>34}   │
+  └──────────────────────────────────────────────────────────────┘
     """)
     
     # ================================================================
@@ -235,13 +243,16 @@ def main():
     
     # Charts
     print("  Creating charts...")
-    charts.plot_attack_success_rate(
-        models=["Gradient Attack"],
-        asr_values=[gradient_metrics.asr],
-        title="Attack Success Rate",
-        save_name="asr",
-    )
-    print("    - asr.png")
+    try:
+        charts.plot_attack_success_rate(
+            models=["Gradient Attack"],
+            asr_values=[gradient_metrics.asr],
+            title="Attack Success Rate",
+            save_name="asr",
+        )
+        print("    - asr.png SAVED")
+    except Exception as e:
+        print(f"    - asr.png SKIPPED ({str(e)[:30]})")
     
     # HTML Report
     print("  Creating HTML report...")
@@ -285,9 +296,9 @@ def main():
 ║  Model:              {model.model_name:<47} ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  RESULTS                                                             ║
-║    Probe Accuracy:   {probe_result.probe_accuracy:>47.1%} ║
-║    Gradient ASR:     {gradient_metrics.asr:>47.1%} ║
-║    Probe Bypass:     {probe_summary.get('bypass_rate', 0):>46.1%} ║
+║    Probe Accuracy:   {probe_result.probe_accuracy:>47.1%}            ║
+║    Gradient ASR:     {gradient_metrics.asr:>47.1%}  ║
+║    Probe Bypass:     {probe_summary.get('bypass_rate', 0):>46.1%}    ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  OUTPUT FILES                                                        ║
 ║    {str(output_dir.absolute()):<64} ║
