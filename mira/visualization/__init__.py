@@ -15,6 +15,15 @@ from mira.visualization.attention_plot import (
 from mira.visualization.research_charts import (
     ResearchChartGenerator,
 )
+from mira.visualization.live_display import (
+    LiveVisualizer,
+    visualize_attack_progress,
+    display_subspace_analysis,
+)
+from mira.visualization.flow_viz import (
+    RealTimeFlowViz,
+    print_flow_diagram,
+)
 
 __all__ = [
     "plot_subspace_2d",
@@ -26,4 +35,9 @@ __all__ = [
     "plot_head_importance",
     "plot_attention_entropy",
     "ResearchChartGenerator",
+    "LiveVisualizer",
+    "visualize_attack_progress",
+    "display_subspace_analysis",
+    "RealTimeFlowViz",
+    "print_flow_diagram",
 ]
