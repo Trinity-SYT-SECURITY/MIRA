@@ -1,19 +1,11 @@
 #!/usr/bin/env python
 """
-Complete Research Pipeline Script.
+Complete Research Pipeline Script with Real-time Visualization.
 
-Run this script to execute the full MIRA research workflow:
-1. Environment detection
-2. Model loading
-3. Subspace analysis
-4. Attack experiments (Gradient + Rerouting)
-5. Metrics computation
-6. Chart generation
-7. Summary report
+Shows progress and generates visualizations during execution.
 
 Usage:
-    python run_research.py --model pythia-70m --output ./research_output
-    python run_research.py --help
+    python examples/run_research.py --model pythia-70m --output ./research_output
 """
 
 import argparse
@@ -21,9 +13,16 @@ import json
 from pathlib import Path
 from datetime import datetime
 import sys
+import time
 
 # Add framework to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
 
 from mira.utils import detect_environment, print_environment_info
 from mira.utils.data import load_harmful_prompts, load_safe_prompts
@@ -34,6 +33,24 @@ from mira.attack import GradientAttack, ReroutingAttack
 from mira.metrics import AttackSuccessEvaluator
 from mira.visualization import ResearchChartGenerator
 from mira.visualization import plot_subspace_2d
+
+
+def print_step(step_num: int, total: int, message: str):
+    """Print step progress."""
+    bar = "=" * 50
+    print(f"\n{'=' * 60}")
+    print(f"[Step {step_num}/{total}] {message}")
+    print(f"{'=' * 60}")
+
+
+def print_progress_bar(current: int, total: int, prefix: str = "", suffix: str = ""):
+    """Print ASCII progress bar."""
+    percent = current / total * 100
+    filled = int(50 * current / total)
+    bar = "#" * filled + "-" * (50 - filled)
+    print(f"\r{prefix} [{bar}] {percent:.1f}% {suffix}", end="", flush=True)
+    if current == total:
+        print()
 
 
 def parse_args():
@@ -62,78 +79,138 @@ def parse_args():
         default=20,
         help="Adversarial suffix length (default: 20)",
     )
+    parser.add_argument(
+        "--num-prompts",
+        type=int,
+        default=5,
+        help="Number of prompts to test (default: 5)",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    start_time = time.time()
     
-    print("=" * 60)
-    print("MIRA - Complete Research Pipeline")
-    print("=" * 60)
+    print("""
+    ███╗   ███╗██╗██████╗  █████╗ 
+    ████╗ ████║██║██╔══██╗██╔══██╗
+    ██╔████╔██║██║██████╔╝███████║
+    ██║╚██╔╝██║██║██╔══██╗██╔══██║
+    ██║ ╚═╝ ██║██║██║  ██║██║  ██║
+    ╚═╝     ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+    Mechanistic Interpretability Research & Attack Framework
+    """)
+    
+    TOTAL_STEPS = 7
     
     # ===== STEP 1: Environment Detection =====
-    print("\n[1/7] Detecting environment...")
+    print_step(1, TOTAL_STEPS, "ENVIRONMENT DETECTION")
+    
+    print("Detecting system capabilities...")
     env = detect_environment()
     print_environment_info(env)
     
     # ===== STEP 2: Setup Output =====
-    print("\n[2/7] Setting up output directories...")
+    print_step(2, TOTAL_STEPS, "SETUP OUTPUT DIRECTORIES")
+    
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "charts").mkdir(exist_ok=True)
-    (output_dir / "data").mkdir(exist_ok=True)
+    charts_dir = output_dir / "charts"
+    data_dir = output_dir / "data"
+    charts_dir.mkdir(exist_ok=True)
+    data_dir.mkdir(exist_ok=True)
+    
+    print(f"  Output directory: {output_dir.absolute()}")
+    print(f"  Charts: {charts_dir}")
+    print(f"  Data: {data_dir}")
     
     logger = ExperimentLogger(
         output_dir=str(output_dir),
         experiment_name="research",
     )
-    charts = ResearchChartGenerator(output_dir=str(output_dir / "charts"))
+    charts = ResearchChartGenerator(output_dir=str(charts_dir))
     
     # ===== STEP 3: Load Model =====
-    print(f"\n[3/7] Loading model: {args.model}...")
+    print_step(3, TOTAL_STEPS, "LOADING MODEL")
+    
     device = env.gpu.backend
-    model = ModelWrapper(args.model, device=device)
-    print(f"  Model: {model.model_name}")
-    print(f"  Layers: {model.n_layers}")
+    print(f"  Model: {args.model}")
     print(f"  Device: {device}")
+    print("  Loading...", end=" ", flush=True)
+    
+    model = ModelWrapper(args.model, device=device)
+    
+    print("DONE")
+    print(f"  Loaded: {model.model_name}")
+    print(f"  Layers: {model.n_layers}")
+    print(f"  Vocab size: {model.vocab_size}")
     
     # ===== STEP 4: Load Data =====
-    print("\n[4/7] Loading prompts...")
-    safe_prompts = load_safe_prompts()[:10]
-    harmful_prompts = load_harmful_prompts()[:10]
+    print_step(4, TOTAL_STEPS, "LOADING RESEARCH DATA")
+    
+    safe_prompts = load_safe_prompts()[:args.num_prompts * 2]
+    harmful_prompts = load_harmful_prompts()[:args.num_prompts * 2]
+    test_prompts = harmful_prompts[:args.num_prompts]
+    
     print(f"  Safe prompts: {len(safe_prompts)}")
     print(f"  Harmful prompts: {len(harmful_prompts)}")
+    print(f"  Test prompts: {len(test_prompts)}")
+    
+    print("\n  Sample prompts:")
+    for i, p in enumerate(test_prompts[:3]):
+        print(f"    {i+1}. {p[:50]}...")
     
     # ===== STEP 5: Subspace Analysis =====
-    print("\n[5/7] Analyzing subspaces...")
+    print_step(5, TOTAL_STEPS, "SUBSPACE ANALYSIS")
+    
     layer_idx = model.n_layers // 2
     analyzer = SubspaceAnalyzer(model, layer_idx=layer_idx)
     
-    probe_result = analyzer.train_probe(safe_prompts, harmful_prompts)
-    print(f"  Layer: {layer_idx}")
-    print(f"  Probe accuracy: {probe_result.probe_accuracy:.2%}")
+    print(f"  Target layer: {layer_idx}")
+    print("\n  Collecting activations...")
     
-    # Generate subspace chart
+    # Show progress for activation collection
+    print("    Safe prompts:    ", end="")
     safe_acts = analyzer.collect_activations(safe_prompts)
-    harmful_acts = analyzer.collect_activations(harmful_prompts)
+    print("DONE")
     
-    subspace_chart = plot_subspace_2d(
+    print("    Harmful prompts: ", end="")
+    harmful_acts = analyzer.collect_activations(harmful_prompts)
+    print("DONE")
+    
+    print("\n  Training linear probe...")
+    probe_result = analyzer.train_probe(safe_prompts, harmful_prompts)
+    
+    print(f"\n  ┌────────────────────────────────────┐")
+    print(f"  │ SUBSPACE ANALYSIS RESULTS          │")
+    print(f"  ├────────────────────────────────────┤")
+    print(f"  │ Layer:          {layer_idx:>18} │")
+    print(f"  │ Probe Accuracy: {probe_result.probe_accuracy:>17.2%} │")
+    print(f"  │ Direction Norm: {probe_result.refusal_direction.norm():>17.4f} │")
+    print(f"  └────────────────────────────────────┘")
+    
+    # Generate visualization
+    print("\n  Generating subspace visualization...")
+    subspace_path = str(charts_dir / "subspace.png")
+    plot_subspace_2d(
         safe_acts,
         harmful_acts,
         refusal_direction=probe_result.refusal_direction,
         title=f"Refusal Subspace (Layer {layer_idx})",
-        save_path=str(output_dir / "charts" / "subspace.png"),
+        save_path=subspace_path,
     )
+    print(f"    Saved: {subspace_path}")
     
     # ===== STEP 6: Attack Experiments =====
-    print("\n[6/7] Running attack experiments...")
+    print_step(6, TOTAL_STEPS, "ATTACK EXPERIMENTS")
     
-    test_prompts = harmful_prompts[:5]
     evaluator = AttackSuccessEvaluator()
     
-    # Gradient Attack
-    print("  Running Gradient Attack...")
+    # ----- Gradient Attack -----
+    print("\n  [A] GRADIENT ATTACK")
+    print("  " + "-" * 40)
+    
     gradient_attack = GradientAttack(
         model,
         suffix_length=args.suffix_length,
@@ -141,9 +218,24 @@ def main():
     )
     
     gradient_results = []
+    gradient_losses = []
+    
     for i, prompt in enumerate(test_prompts):
-        print(f"    [{i+1}/{len(test_prompts)}] {prompt[:40]}...")
-        result = gradient_attack.optimize(prompt, num_steps=args.attack_steps)
+        print(f"\n  Attack {i+1}/{len(test_prompts)}: {prompt[:40]}...")
+        
+        # Show optimization progress
+        result = gradient_attack.optimize(
+            prompt,
+            num_steps=args.attack_steps,
+            verbose=False,
+        )
+        
+        status = "SUCCESS" if result.success else "FAILED"
+        print(f"    Result: {status}")
+        print(f"    Loss:   {result.final_loss:.4f}")
+        if result.success:
+            print(f"    Suffix: {result.adversarial_suffix[:30]}...")
+        
         gradient_results.append({
             "prompt": prompt,
             "response": result.generated_response or "",
@@ -151,6 +243,7 @@ def main():
             "suffix": result.adversarial_suffix,
             "loss": result.final_loss,
         })
+        gradient_losses.append(result.final_loss)
         
         logger.log_attack(
             model_name=model.model_name,
@@ -162,8 +255,10 @@ def main():
             metrics={"loss": result.final_loss},
         )
     
-    # Rerouting Attack
-    print("  Running Rerouting Attack...")
+    # ----- Rerouting Attack -----
+    print("\n  [B] REROUTING ATTACK")
+    print("  " + "-" * 40)
+    
     rerouting_attack = ReroutingAttack(
         model,
         refusal_direction=probe_result.refusal_direction,
@@ -172,9 +267,15 @@ def main():
     )
     
     rerouting_results = []
+    
     for i, prompt in enumerate(test_prompts):
-        print(f"    [{i+1}/{len(test_prompts)}] {prompt[:40]}...")
+        print(f"\n  Attack {i+1}/{len(test_prompts)}: {prompt[:40]}...")
+        
         result = rerouting_attack.optimize(prompt, num_steps=args.attack_steps)
+        
+        status = "SUCCESS" if result.success else "FAILED"
+        print(f"    Result: {status}")
+        
         rerouting_results.append({
             "prompt": prompt,
             "response": result.generated_response or "",
@@ -202,21 +303,35 @@ def main():
         for r in rerouting_results
     ])
     
-    print(f"\n  Gradient ASR: {gradient_metrics.asr:.2%}")
-    print(f"  Rerouting ASR: {rerouting_metrics.asr:.2%}")
+    print(f"\n  ┌────────────────────────────────────────────┐")
+    print(f"  │ ATTACK RESULTS SUMMARY                     │")
+    print(f"  ├────────────────────────────────────────────┤")
+    print(f"  │ Gradient Attack:                           │")
+    print(f"  │   ASR:          {gradient_metrics.asr:>25.2%} │")
+    print(f"  │   Refusal Rate: {gradient_metrics.refusal_rate:>25.2%} │")
+    print(f"  ├────────────────────────────────────────────┤")
+    print(f"  │ Rerouting Attack:                          │")
+    print(f"  │   ASR:          {rerouting_metrics.asr:>25.2%} │")
+    print(f"  │   Refusal Rate: {rerouting_metrics.refusal_rate:>25.2%} │")
+    print(f"  └────────────────────────────────────────────┘")
     
     # ===== STEP 7: Generate Charts and Summary =====
-    print("\n[7/7] Generating charts and summary...")
+    print_step(7, TOTAL_STEPS, "GENERATING CHARTS & SUMMARY")
+    
+    print("  Generating visualizations...")
     
     # ASR comparison chart
+    print("    1. ASR Comparison Chart...", end=" ")
     charts.plot_attack_success_rate(
         models=["Gradient", "Rerouting"],
         asr_values=[gradient_metrics.asr, rerouting_metrics.asr],
         title="Attack Success Rate Comparison",
         save_name="asr_comparison",
     )
+    print("DONE")
     
     # Radar chart
+    print("    2. Attack Radar Chart...", end=" ")
     charts.plot_comparison_radar(
         categories=["ASR", "Bypass Rate", "Stealth", "Speed"],
         values_dict={
@@ -236,15 +351,31 @@ def main():
         title="Attack Strategy Comparison",
         save_name="attack_radar",
     )
+    print("DONE")
+    
+    # Loss distribution
+    print("    3. Loss Distribution...", end=" ")
+    charts.plot_entropy_distribution(
+        gradient_losses,
+        title="Gradient Attack Final Loss Distribution",
+        save_name="loss_distribution",
+    )
+    print("DONE")
     
     # Save data
-    logger.save_to_csv()
-    logger.save_to_json()
+    print("\n  Saving experiment data...")
+    csv_path = logger.save_to_csv()
+    json_path = logger.save_to_json()
+    print(f"    CSV:  {csv_path}")
+    print(f"    JSON: {json_path}")
     
     # Research summary
+    elapsed = time.time() - start_time
+    
     summary = {
         "experiment": "MIRA Research Pipeline",
         "timestamp": datetime.now().isoformat(),
+        "duration_seconds": elapsed,
         "environment": {
             "os": env.system.os_name,
             "python": env.system.python_version,
@@ -264,39 +395,54 @@ def main():
                 "asr": float(gradient_metrics.asr),
                 "refusal_rate": float(gradient_metrics.refusal_rate),
                 "total": gradient_metrics.total_attacks,
+                "successful": gradient_metrics.successful_attacks,
             },
             "rerouting": {
                 "asr": float(rerouting_metrics.asr),
                 "refusal_rate": float(rerouting_metrics.refusal_rate),
                 "total": rerouting_metrics.total_attacks,
+                "successful": rerouting_metrics.successful_attacks,
             },
         },
         "output_files": {
-            "charts": str(output_dir / "charts"),
-            "data": str(output_dir / "data"),
+            "charts": str(charts_dir),
+            "data": str(data_dir),
         },
     }
     
-    with open(output_dir / "research_summary.json", "w") as f:
+    summary_path = output_dir / "research_summary.json"
+    with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
     
     # Print final summary
-    print("\n" + "=" * 60)
-    print("RESEARCH COMPLETE")
-    print("=" * 60)
-    print(f"Model:           {model.model_name}")
-    print(f"Probe Accuracy:  {probe_result.probe_accuracy:.2%}")
-    print(f"Gradient ASR:    {gradient_metrics.asr:.2%}")
-    print(f"Rerouting ASR:   {rerouting_metrics.asr:.2%}")
-    print(f"Output:          {output_dir.absolute()}")
-    print("=" * 60)
-    print("\nGenerated files:")
-    print(f"  - {output_dir}/charts/subspace.png")
-    print(f"  - {output_dir}/charts/asr_comparison.png")
-    print(f"  - {output_dir}/charts/attack_radar.png")
-    print(f"  - {output_dir}/research_summary.json")
-    print(f"  - {output_dir}/data/records.csv")
-    print(f"  - {output_dir}/data/records.json")
+    print(f"""
+╔════════════════════════════════════════════════════════════╗
+║                    RESEARCH COMPLETE                       ║
+╠════════════════════════════════════════════════════════════╣
+║ Model:           {model.model_name:<40} ║
+║ Duration:        {elapsed:.2f} seconds{' ' * 32}║
+╠════════════════════════════════════════════════════════════╣
+║ RESULTS:                                                   ║
+║   Probe Accuracy:  {probe_result.probe_accuracy:>38.2%} ║
+║   Gradient ASR:    {gradient_metrics.asr:>38.2%} ║
+║   Rerouting ASR:   {rerouting_metrics.asr:>38.2%} ║
+╠════════════════════════════════════════════════════════════╣
+║ OUTPUT FILES:                                              ║
+║   {str(output_dir.absolute())[:56]:<56} ║
+╚════════════════════════════════════════════════════════════╝
+
+Generated files:
+  Charts:
+    - {charts_dir}/subspace.png
+    - {charts_dir}/asr_comparison.png
+    - {charts_dir}/attack_radar.png
+    - {charts_dir}/loss_distribution.png
+  Data:
+    - {data_dir}/records.csv
+    - {data_dir}/records.json
+  Summary:
+    - {summary_path}
+    """)
 
 
 if __name__ == "__main__":
