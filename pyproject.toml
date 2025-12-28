@@ -57,7 +57,9 @@ interpretability = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/systematic/mira"
+"Homepage" = "https://github.com/Trinity-SYT-SECURITY/MIRA"
+"Repository" = "https://github.com/Trinity-SYT-SECURITY/MIRA"
+"Issues" = "https://github.com/Trinity-SYT-SECURITY/MIRA/issues"
 
 [project.scripts]
 mira = "mira.cli:main"
