@@ -242,9 +242,8 @@ def main():
     
     rerouting_attack = ReroutingAttack(
         model,
-        refusal_direction=probe_result.refusal_direction,
-        acceptance_direction=probe_result.acceptance_direction,
-        layer_idx=layer_idx,
+        subspace_result=probe_result,
+        target_layer=layer_idx,
     )
     rerouting_results = []
     
@@ -253,27 +252,34 @@ def main():
         print(f"    Prompt: {prompt[:50]}...")
         print(f"    Steering: ", end="", flush=True)
         
-        result = rerouting_attack.optimize(prompt, num_steps=args.attack_steps)
-        
-        status = "SUCCESS" if result.success else "FAILED"
-        print(f"{status}")
-        
-        if result.success and result.generated_response:
-            print(f"    Response: {result.generated_response[:60]}...")
-        
-        rerouting_results.append({
-            "prompt": prompt,
-            "response": result.generated_response or "",
-            "success": result.success,
-        })
+        try:
+            result = rerouting_attack.optimize(prompt, num_steps=args.attack_steps)
+            status = "SUCCESS" if result.success else "FAILED"
+            print(f"{status}")
+            
+            if result.success and result.generated_response:
+                print(f"    Response: {result.generated_response[:60]}...")
+            
+            rerouting_results.append({
+                "prompt": prompt,
+                "response": result.generated_response or "",
+                "success": result.success,
+            })
+        except Exception as e:
+            print(f"ERROR: {str(e)[:50]}")
+            rerouting_results.append({
+                "prompt": prompt,
+                "response": "",
+                "success": False,
+            })
         
         logger.log_attack(
             model_name=model.model_name,
             prompt=prompt,
             attack_type="rerouting",
             suffix="",
-            response=result.generated_response or "",
-            success=result.success,
+            response=rerouting_results[-1]["response"],
+            success=rerouting_results[-1]["success"],
             metrics={},
         )
     
