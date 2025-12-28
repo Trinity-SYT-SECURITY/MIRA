@@ -208,28 +208,47 @@ def main():
     for i, prompt in enumerate(test_prompts):
         print(f"\n  [{i+1}/{len(test_prompts)}] {prompt[:45]}...")
         
+        # Send initial state to live viz
+        if server:
+            server.send_attack_step(
+                step=0,
+                loss=10.0,
+                suffix="Initializing...",
+                success=False,
+            )
+            for layer in range(model.n_layers):
+                server.send_layer_update(
+                    layer_idx=layer,
+                    refusal_score=0.1,
+                    acceptance_score=0.1,
+                    direction="neutral",
+                )
+            time.sleep(0.2)
+        
         # Run attack (simplified - use built-in optimize)
         result = attack.optimize(prompt, num_steps=30, verbose=False)
         
-        # Send progress to live viz
+        # Send progress updates to live viz (simulate steps for visual feedback)
         if server:
-            for step in range(10):
+            for step in range(15):
+                simulated_loss = result.final_loss * (2.0 - step / 15)
                 server.send_attack_step(
                     step=step + 1,
-                    loss=result.final_loss * (1 + (10 - step) / 10),
-                    suffix=result.adversarial_suffix[:25] if result.adversarial_suffix else "...",
-                    success=result.success,
+                    loss=simulated_loss,
+                    suffix=result.adversarial_suffix[:30] if result.adversarial_suffix else "optimizing...",
+                    success=result.success if step == 14 else False,
                 )
                 for layer in range(model.n_layers):
-                    refusal = 0.2 + 0.5 * (step / 10) * (layer / model.n_layers)
-                    acceptance = 0.3 * (1 - step / 10) * (layer / model.n_layers)
+                    progress = (step + 1) / 15
+                    refusal = 0.1 + 0.6 * progress * (layer / max(model.n_layers - 1, 1))
+                    acceptance = 0.3 * (1 - progress) * (layer / max(model.n_layers - 1, 1))
                     server.send_layer_update(
                         layer_idx=layer,
                         refusal_score=refusal,
                         acceptance_score=acceptance,
                         direction="refusal" if refusal > acceptance else "acceptance",
                     )
-                time.sleep(0.05)
+                time.sleep(0.1)  # Longer delay for visible updates
         
         status = "SUCCESS" if result.success else "FAILED"
         print(f"      Result: {status} | Loss: {result.final_loss:.4f}")
@@ -248,7 +267,7 @@ def main():
             suffix=result.adversarial_suffix,
             response=result.generated_response or "",
             success=result.success,
-            metrics={"loss": best_loss},
+            metrics={"loss": result.final_loss},
         )
     
     gradient_metrics = evaluator.evaluate_batch([
