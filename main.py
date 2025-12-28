@@ -78,6 +78,9 @@ def main():
     
     print_banner()
     
+    # Configuration
+    TOTAL_PHASES = 7
+    
     # ================================================================
     # PHASE 1: ENVIRONMENT DETECTION & MODEL SELECTION
     # ================================================================
