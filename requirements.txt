@@ -20,7 +20,7 @@ PyYAML>=6.0
 # Live Web Visualization
 flask>=3.0.0
 flask-cors>=4.0.0
-
+psutil
 # Optional: Datasets
 # datasets>=2.0.0
 # huggingface-hub>=0.20.0

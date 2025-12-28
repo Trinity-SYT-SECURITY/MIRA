@@ -623,6 +623,64 @@ DASHBOARD_HTML = '''
             font-size: 0.8em;
             color: #555;
         }
+        
+        /* Transformer Internals Styles */
+        .transformer-embeddings,
+        .transformer-comparison,
+        .residual-flow {
+            grid-column: 1 / -1;
+        }
+        
+        .token-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .token {
+            padding: 4px 8px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 3px;
+            font-size: 0.85em;
+            font-family: 'Space Mono', monospace;
+        }
+        
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .comparison-side {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 4px;
+        }
+        
+        .comparison-side h4 {
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+            font-family: 'Orbitron', sans-serif;
+        }
+        
+        .trace-info {
+            font-size: 0.85em;
+            line-height: 1.6;
+        }
+        
+        #embeddings-canvas {
+            width: 100%;
+            height: 200px;
+            background: #000;
+            border-radius: 4px;
+        }
+        
+        #residual-svg {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -688,6 +746,32 @@ DASHBOARD_HTML = '''
         <div class="panel suffix-panel">
             <div class="panel-title">Adversarial Suffix</div>
             <div class="suffix-display" id="suffix">[ Awaiting attack initialization... ]</div>
+        </div>
+        
+        <!-- Transformer Internals Panels -->
+        <div class="panel transformer-embeddings">
+            <div class="panel-title">🧠 Token Embeddings</div>
+            <div class="token-list" id="token-list"></div>
+            <canvas id="embeddings-canvas" width="800" height="200"></canvas>
+        </div>
+        
+        <div class="panel transformer-comparison">
+            <div class="panel-title">🔄 Transformer Comparison (Normal vs Adversarial)</div>
+            <div class="comparison-grid">
+                <div class="comparison-side">
+                    <h4 style="color: #0ff;">Normal Prompt</h4>
+                    <div id="normal-info" class="trace-info">Waiting for trace...</div>
+                </div>
+                <div class="comparison-side">
+                    <h4 style="color: #f44;">Adversarial Prompt</h4>
+                    <div id="adv-info" class="trace-info">Waiting for attack...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="panel residual-flow">
+            <div class="panel-title">📊 Residual Stream Changes</div>
+            <svg id="residual-svg" width="100%" height="150"></svg>
         </div>
     </div>
     
