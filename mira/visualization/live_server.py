@@ -508,6 +508,41 @@ class LiveVisualizationServer:
         )
         event_queue.put(event)
 
+    @staticmethod
+    def send_phase(
+        current: int,
+        total: int,
+        name: str,
+        detail: str = "",
+        progress: float = None,
+    ):
+        """
+        Send current execution phase to visualization.
+        
+        Displays phase progress on the dashboard (e.g., PHASE 4/7: SUBSPACE ANALYSIS)
+        
+        Args:
+            current: Current phase number (1-indexed)
+            total: Total number of phases
+            name: Name of the current phase
+            detail: Optional detail string (e.g., "Training probe...")
+            progress: Optional explicit progress percentage (0-100)
+        """
+        if progress is None:
+            progress = (current / total) * 100
+            
+        event = VisualizationEvent(
+            event_type="phase",
+            data={
+                "current": current,
+                "total": total,
+                "name": name,
+                "detail": detail,
+                "progress": progress,
+            }
+        )
+        event_queue.put(event)
+
 
 # Import dashboard - use flow graph visualization
 try:

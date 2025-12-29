@@ -94,10 +94,23 @@ def print_banner():
     """)
 
 
-def print_phase(phase_num: int, total: int, title: str):
+def print_phase(phase_num: int, total: int, title: str, detail: str = "", server=None):
+    """Print phase info to terminal and optionally broadcast to dashboard."""
     print(f"\n{'='*70}")
     print(f"  PHASE {phase_num}/{total}: {title}")
     print(f"{'='*70}")
+    
+    # Broadcast to visualization dashboard if server available
+    if server is not None and hasattr(server, 'send_phase'):
+        try:
+            server.send_phase(
+                current=phase_num,
+                total=total,
+                name=title,
+                detail=detail,
+            )
+        except:
+            pass  # Silent - dashboard errors shouldn't affect main output
 
 
 def main():
@@ -253,7 +266,7 @@ def main():
     # ================================================================
     # PHASE 4: SUBSPACE ANALYSIS
     # ================================================================
-    print_phase(4, TOTAL_PHASES, "SUBSPACE ANALYSIS")
+    print_phase(4, TOTAL_PHASES, "SUBSPACE ANALYSIS", "Training probe...", server=server)
     
     safe_prompts = load_safe_prompts()[:10]
     harmful_prompts = load_harmful_prompts()[:10]
@@ -360,10 +373,10 @@ def main():
     ssr_method = os.getenv("MIRA_SSR_METHOD", "probe").lower()  # "probe" or "steering"
     
     if use_ssr and SSR_AVAILABLE:
-        print_phase(5, TOTAL_PHASES, f"SSR ATTACKS ({ssr_method.upper()}) (LIVE)")
+        print_phase(5, TOTAL_PHASES, f"SSR ATTACKS ({ssr_method.upper()}) (LIVE)", f"{num_attacks} attacks", server=server)
         attack_type = "ssr"
     else:
-        print_phase(5, TOTAL_PHASES, "GRADIENT ATTACKS (LIVE)")
+        print_phase(5, TOTAL_PHASES, "GRADIENT ATTACKS (LIVE)", f"{num_attacks} attacks", server=server)
         attack_type = "gradient"
         if use_ssr and not SSR_AVAILABLE:
             print("  Warning: SSR requested but not available, using Gradient attack")
@@ -1102,7 +1115,7 @@ def main():
     # ================================================================
     # PHASE 6: PROBE TESTING
     # ================================================================
-    print_phase(6, TOTAL_PHASES, "PROBE TESTING (19 ATTACKS)")
+    print_phase(6, TOTAL_PHASES, "PROBE TESTING (19 ATTACKS)", "Running probes...", server=server)
     
     print(f"  Categories: {', '.join(get_all_categories())}")
     print(f"  Total Probes: {len(ALL_PROBES)}")
@@ -1125,7 +1138,7 @@ def main():
     # ================================================================
     # PHASE 7: GENERATE OUTPUTS
     # ================================================================
-    print_phase(7, TOTAL_PHASES, "GENERATING OUTPUTS")
+    print_phase(7, TOTAL_PHASES, "GENERATING OUTPUTS", "Creating reports...", server=server)
     
     # Charts
     print("  Creating charts...")

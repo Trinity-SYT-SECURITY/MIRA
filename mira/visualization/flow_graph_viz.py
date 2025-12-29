@@ -149,6 +149,61 @@ def get_flow_graph_html() -> str:
             color: var(--accent-purple);
         }
 
+        /* Phase Progress Display */
+        .phase-progress {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, rgba(0,212,255,0.1), rgba(139,92,246,0.1));
+            border-radius: 12px;
+            border: 1px solid rgba(0,212,255,0.3);
+            min-width: 280px;
+        }
+
+        .phase-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .phase-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            background: var(--bg-tertiary);
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+
+        .phase-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .phase-detail {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
         /* Main Layout - Full width responsive */
         .main-layout {
             display: grid;
@@ -840,6 +895,18 @@ def get_flow_graph_html() -> str:
                 <div class="logo-text">MIRA Flow Analyzer</div>
                 <div class="logo-subtitle">Transformer Internals Visualization</div>
             </div>
+        </div>
+        
+        <!-- Phase Progress Display -->
+        <div class="phase-progress">
+            <div class="phase-info">
+                <span class="phase-number" id="phase-number">--/--</span>
+                <span class="phase-name" id="phase-name">Initializing...</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+            </div>
+            <div class="phase-detail" id="phase-detail">Waiting for connection...</div>
         </div>
         
         <div class="status-bar">
@@ -1680,6 +1747,23 @@ def get_flow_graph_html() -> str:
                     if (state.isSSRMode) {
                         addConsoleLine('INFO', 'SSR attack mode activated');
                     }
+                    break;
+
+                case 'phase':
+                case 'phase_update':
+                    // Update phase progress display
+                    const phaseNum = data.current || data.phase;
+                    const totalPhases = data.total || 7;
+                    const phaseName = data.name || '';
+                    const phaseDetail = data.detail || '';
+                    const phaseProgress = data.progress !== undefined ? data.progress : (phaseNum / totalPhases * 100);
+                    
+                    document.getElementById('phase-number').textContent = `${phaseNum}/${totalPhases}`;
+                    document.getElementById('phase-name').textContent = phaseName;
+                    document.getElementById('phase-detail').textContent = phaseDetail;
+                    document.getElementById('progress-bar').style.width = `${phaseProgress}%`;
+                    
+                    addConsoleLine('INFO', `PHASE ${phaseNum}/${totalPhases}: ${phaseName}`);
                     break;
             }
         }
