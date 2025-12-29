@@ -255,6 +255,7 @@ class BaseAttack(ABC):
         target: Optional[str] = None,
         init_method: str = "exclamation",
         verbose: bool = False,
+        step_callback: Optional[callable] = None,
         **kwargs,
     ) -> AttackResult:
         """
@@ -266,6 +267,7 @@ class BaseAttack(ABC):
             target: Optional target response
             init_method: Suffix initialization method
             verbose: Print progress
+            step_callback: Callback called each step with (step, loss, suffix_tokens, model)
             **kwargs: Additional arguments for optimize_step
             
         Returns:
@@ -291,6 +293,19 @@ class BaseAttack(ABC):
                 self.best_loss = loss_val
                 self.best_suffix = self.decode_suffix(suffix_tokens)
                 suffix_history.append(self.best_suffix)
+            
+            # Call step callback for real-time visualization
+            if step_callback is not None:
+                try:
+                    step_callback(
+                        step=step,
+                        loss=loss_val,
+                        suffix_tokens=suffix_tokens,
+                        model=self.model,
+                        prompt=prompt,
+                    )
+                except Exception:
+                    pass  # Don't let callback errors break the attack
             
             # Optimize step
             suffix_tokens = self.optimize_step(prompt, suffix_tokens, **kwargs)

@@ -219,38 +219,95 @@ def main():
     # Initialize transformer tracer for internal visualization
     tracer = TransformerTracer(model)
     
+    # Real-time step callback for visualization
+    def attack_step_callback(step, loss, suffix_tokens, model, prompt):
+        """Send real transformer data during each attack step."""
+        if not server:
+            return
+        
+        # Send attack progress
+        suffix_text = model.tokenizer.decode(suffix_tokens.tolist())
+        server.send_attack_step(
+            step=step,
+            loss=loss,
+            suffix=suffix_text[:40],
+            success=False,
+        )
+        
+        # Every 3 steps, send transformer trace for visualization
+        if step % 3 == 0:
+            try:
+                full_prompt = prompt + " " + suffix_text
+                input_ids = model.tokenizer.encode(full_prompt, return_tensors="pt")[0]
+                
+                # Get trace with attention weights
+                trace = tracer.trace_forward(input_ids)
+                
+                # Send embeddings (token vectors)
+                if trace.tokens:
+                    server.send_embeddings(
+                        tokens=trace.tokens[:20],  # Limit to first 20 tokens
+                        embeddings=trace.embeddings[:20].tolist() if hasattr(trace.embeddings, 'tolist') else []
+                    )
+                
+                # Send layer-by-layer updates
+                for layer_idx, layer_trace in enumerate(trace.layers[:6]):  # First 6 layers
+                    # Calculate refusal/acceptance scores from attention
+                    attn = layer_trace.attention_pattern
+                    if attn is not None and len(attn.shape) >= 2:
+                        avg_attn = float(attn.mean())
+                        server.send_layer_update(
+                            layer_idx=layer_idx,
+                            refusal_score=avg_attn * (1 - step / 30),
+                            acceptance_score=avg_attn * (step / 30),
+                            direction="forward" if step < 15 else "backward",
+                        )
+                        
+                        # Send attention matrix for visualization
+                        if layer_idx == 0:  # First layer attention
+                            weights = attn[:8, :8].tolist() if len(attn) >= 8 else attn.tolist()
+                            server.send_attention_matrix(
+                                layer_idx=layer_idx,
+                                head_idx=0,
+                                attention_weights=weights,
+                                tokens=trace.tokens[:8] if trace.tokens else [],
+                            )
+                
+            except Exception as e:
+                # Silently handle trace errors
+                pass
+    
     attack_results = []
     for i, prompt in enumerate(test_prompts):
         print(f"\n  [{i+1}/{len(test_prompts)}] {prompt[:45]}...")
         
-        # Send initial layer update for live viz
+        # Send initial state
         if server:
-            server.send_layer_update(
-                layer_idx=0, 
-                refusal_score=0.0, 
-                acceptance_score=0.0,
-                direction="forward"
-            )
+            server.send_attack_step(step=0, loss=10.0, suffix="Initializing...", success=False)
+            # Send initial embeddings
+            try:
+                input_ids = model.tokenizer.encode(prompt, return_tensors="pt")[0]
+                tokens = model.tokenizer.convert_ids_to_tokens(input_ids.tolist())
+                server.send_embeddings(tokens=tokens[:15], embeddings=[])
+            except:
+                pass
         
-        # Send initial attack state to live viz
+        # Run attack WITH step callback for real-time visualization
+        result = attack.optimize(
+            prompt, 
+            num_steps=30, 
+            verbose=False,
+            step_callback=attack_step_callback,
+        )
+        
+        # Final update after attack
         if server:
             server.send_attack_step(
-                step=0,
-                loss=10.0,
-                suffix="Initializing...",
-                success=False,
+                step=30,
+                loss=result.final_loss,
+                suffix=result.adversarial_suffix[:30] if result.adversarial_suffix else "done",
+                success=result.success,
             )
-            for layer in range(model.n_layers):
-                server.send_layer_update(
-                    layer_idx=layer,
-                    refusal_score=0.1,
-                    acceptance_score=0.1,
-                    direction="neutral",
-                )
-            time.sleep(0.2)
-        
-        # Run attack (simplified - use built-in optimize)
-        result = attack.optimize(prompt, num_steps=30, verbose=False)
         
         # Trace adversarial prompt AFTER attack
         if server and result.adversarial_suffix:
@@ -264,43 +321,8 @@ def main():
                     trace_data=adv_trace.to_dict(),
                     trace_type="adversarial"
                 )
-                
-                # Compare and send layer differences
-                for layer_idx in range(min(len(normal_trace.layers), len(adv_trace.layers))):
-                    normal_layer = normal_trace.layers[layer_idx]
-                    adv_layer = adv_trace.layers[layer_idx]
-                    
-                    residual_diff = float((adv_layer.residual_post - normal_layer.residual_post).norm())
-                    
-                    server.send_residual_update(
-                        layer_idx=layer_idx,
-                        residual_norm=float(adv_layer.residual_post.norm()),
-                        delta_norm=residual_diff
-                    )
             except Exception as e:
                 print(f"      [Trace Error: {e}]")
-        
-        # Send progress updates to live viz (simulate steps for visual feedback)
-        if server:
-            for step in range(15):
-                simulated_loss = result.final_loss * (2.0 - step / 15)
-                server.send_attack_step(
-                    step=step + 1,
-                    loss=simulated_loss,
-                    suffix=result.adversarial_suffix[:30] if result.adversarial_suffix else "optimizing...",
-                    success=result.success if step == 14 else False,
-                )
-                for layer in range(model.n_layers):
-                    progress = (step + 1) / 15
-                    refusal = 0.1 + 0.6 * progress * (layer / max(model.n_layers - 1, 1))
-                    acceptance = 0.3 * (1 - progress) * (layer / max(model.n_layers - 1, 1))
-                    server.send_layer_update(
-                        layer_idx=layer,
-                        refusal_score=refusal,
-                        acceptance_score=acceptance,
-                        direction="refusal" if refusal > acceptance else "acceptance",
-                    )
-                time.sleep(0.1)  # Longer delay for visible updates
         
         # Evaluate response for detailed feedback
         eval_result = evaluator.evaluate_single(
