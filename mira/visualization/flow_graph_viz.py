@@ -852,8 +852,8 @@ def get_flow_graph_html() -> str:
                 <span class="status-value loss" id="current-loss">--</span>
             </div>
             <div class="status-item">
-                <span class="status-label">ASR</span>
-                <span class="status-value success" id="success-rate">0%</span>
+                <span class="status-label">Best</span>
+                <span class="status-value success" id="best-loss">--</span>
             </div>
             <div class="status-item">
                 <span class="status-label">Events</span>
@@ -1511,15 +1511,13 @@ def get_flow_graph_html() -> str:
                 case 'attack_step':
                     state.step = data.step;
                     state.loss = data.loss;
-                    if (data.loss < state.bestLoss) state.bestLoss = data.loss;
+                    if (data.loss < state.bestLoss) {
+                        state.bestLoss = data.loss;
+                        document.getElementById('best-loss').textContent = state.bestLoss.toFixed(4);
+                    }
                     document.getElementById('current-step').textContent = data.step;
                     document.getElementById('current-loss').textContent = data.loss?.toFixed(4) || '--';
                     document.getElementById('suffix-text').textContent = data.suffix || '--';
-                    
-                    // Update ASR
-                    if (data.asr !== undefined) {
-                        document.getElementById('success-rate').textContent = data.asr.toFixed(1) + '%';
-                    }
                     
                     // Update current prompt
                     if (data.prompt) {
@@ -1527,7 +1525,7 @@ def get_flow_graph_html() -> str:
                         state.currentPrompt = data.prompt;
                     }
                     
-                    addConsoleLine('ATTACK', `Step ${data.step}: loss=${data.loss?.toFixed(4)}, ASR=${(data.asr || 0).toFixed(1)}%`);
+                    addConsoleLine('ATTACK', `Step ${data.step}: loss=${data.loss?.toFixed(4)}, best=${state.bestLoss.toFixed(4)}`);
                     break;
 
                 case 'embeddings':
@@ -1614,11 +1612,6 @@ def get_flow_graph_html() -> str:
                     const statusEl = document.getElementById('response-status');
                     statusEl.textContent = isSuccess ? 'SUCCESS - Attack Bypassed Safety' : 'FAILED - Model Refused';
                     statusEl.className = 'response-status ' + (isSuccess ? 'success' : 'failed');
-                    
-                    // Update ASR if provided
-                    if (data.asr !== undefined) {
-                        document.getElementById('success-rate').textContent = data.asr.toFixed(1) + '%';
-                    }
                     
                     addConsoleLine('RESPONSE', `${isSuccess ? 'SUCCESS' : 'FAILED'}: ${responseText.slice(0, 80)}...`);
                     break;
