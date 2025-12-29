@@ -861,7 +861,7 @@ def main():
         
         # Send response to visualization
         if server and result.generated_response:
-            server.send_event(
+            server.send_event(VisualizationEvent(
                 event_type="response",
                 data={
                     "prompt": prompt,
@@ -869,7 +869,7 @@ def main():
                     "success": result.success,
                     "asr": (attack_tracker["success"] / attack_tracker["total"]) * 100,
                 }
-            )
+            ))
         
         # Final update after attack
         if server:
