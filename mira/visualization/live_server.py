@@ -304,13 +304,17 @@ class LiveVisualizationServer:
         event_queue.put(event)
 
 
-# Import dashboard - use simple reliable version
+# Import dashboard - use transformer flow visualization
 try:
-    from mira.visualization.simple_dashboard import get_simple_dashboard
-    DASHBOARD_HTML = get_simple_dashboard()
+    from mira.visualization.transformer_flow import get_transformer_flow_html
+    DASHBOARD_HTML = get_transformer_flow_html()
 except ImportError:
-    # Fallback to inline HTML if import fails
-    DASHBOARD_HTML = '''
+    try:
+        from mira.visualization.simple_dashboard import get_simple_dashboard
+        DASHBOARD_HTML = get_simple_dashboard()
+    except ImportError:
+        # Fallback to inline HTML if import fails
+        DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
