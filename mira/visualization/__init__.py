@@ -24,6 +24,9 @@ from mira.visualization.flow_viz import (
     RealTimeFlowViz,
     print_flow_diagram,
 )
+from mira.visualization.transformer_internals import (
+    get_transformer_internals_html,
+)
 
 __all__ = [
     "plot_subspace_2d",
@@ -40,4 +43,5 @@ __all__ = [
     "display_subspace_analysis",
     "RealTimeFlowViz",
     "print_flow_diagram",
+    "get_transformer_internals_html",
 ]

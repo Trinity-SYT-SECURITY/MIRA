@@ -304,14 +304,14 @@ class LiveVisualizationServer:
         event_queue.put(event)
 
 
-# Import dashboard - use attack flow visualization (transformer-explainer style)
+# Import dashboard - use new transformer internals visualization
 try:
-    from mira.visualization.attack_flow import get_attack_flow_html
-    DASHBOARD_HTML = get_attack_flow_html()
+    from mira.visualization.transformer_internals import get_transformer_internals_html
+    DASHBOARD_HTML = get_transformer_internals_html()
 except ImportError:
     try:
-        from mira.visualization.transformer_flow import get_transformer_flow_html
-        DASHBOARD_HTML = get_transformer_flow_html()
+        from mira.visualization.attack_flow import get_attack_flow_html
+        DASHBOARD_HTML = get_attack_flow_html()
     except ImportError:
         # Fallback to inline HTML if import fails
         DASHBOARD_HTML = '''

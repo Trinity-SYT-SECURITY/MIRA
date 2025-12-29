@@ -8,8 +8,6 @@ Shows the complete transformer processing flow:
 - Attention × V → Attention Output
 - MLP Processing
 - Output Logits → Next Token Prediction
-
-Inspired by transformer-explainer but adapted for MIRA attack analysis.
 """
 
 TRANSFORMER_FLOW_HTML = '''

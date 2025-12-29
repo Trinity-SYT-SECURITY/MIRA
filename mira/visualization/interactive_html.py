@@ -177,8 +177,7 @@ class InteractiveViz:
     """
     Generates interactive HTML visualizations.
     
-    Creates rich, browser-based visualizations similar to
-    bertviz and transformer-explainer.
+    Creates rich, browser-based visualizations for transformer analysis.
     """
     
     def __init__(self, output_dir: str = "./viz"):

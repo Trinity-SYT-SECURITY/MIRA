@@ -1,8 +1,7 @@
 """
 Transformer Attack Flow Visualization
 
-Full-page visualization inspired by transformer-explainer.
-Shows the complete processing flow:
+Full-page visualization showing the complete processing flow:
 Input → Embedding → Layer Processing → Attention → MLP → Output
 
 Focus on the FLOW, not metrics.
