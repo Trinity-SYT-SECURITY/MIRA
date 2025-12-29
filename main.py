@@ -660,8 +660,8 @@ def main():
         
         # 9. Detect attack pattern and send to visualization
         pattern = detect_attack_pattern(pattern_history, num_layers)
-        if pattern['detected']:
-            server.send_event(
+        if pattern['detected'] and VisualizationEvent is not None:
+            server.send_event(VisualizationEvent(
                 event_type="pattern_detected",
                 data={
                     "pattern_type": pattern['pattern_type'],
@@ -670,7 +670,7 @@ def main():
                     "affected_layers": pattern.get('affected_layers', []),
                     "delta": pattern.get('delta', 0),
                 }
-            )
+            ))
         
         # 10. Send REAL attention matrix from model outputs
         attention_sent = False
