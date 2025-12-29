@@ -580,8 +580,9 @@ def main():
                 act = current_acts[layer_idx]
                 activation_norm = float(torch.norm(act).item())
                 
-                # Use probe if available
-                if hasattr(analyzer, 'probe') and analyzer.probe is not None:
+                # Method 1: Use probe if available
+                probe_available = hasattr(analyzer, 'probe') and analyzer.probe is not None
+                if probe_available:
                     try:
                         act_input = act[-1:, :] if act.dim() == 2 else act[0, -1:, :] if act.dim() == 3 else act.reshape(1, -1)
                         with torch.no_grad():
@@ -589,12 +590,27 @@ def main():
                             refusal_score = float(probe_pred[0, 0])
                             acceptance_score = 1.0 - refusal_score
                     except:
-                        pass
+                        probe_available = False
+                
+                # Method 2: Fallback to activation norm ratio
+                if not probe_available and layer_idx in baseline_scores:
+                    baseline_norm = baseline_scores[layer_idx].get('activation_norm', 1.0)
+                    if baseline_norm > 0:
+                        # Compute relative change in activation magnitude
+                        norm_ratio = activation_norm / baseline_norm
+                        # Map to [0, 1] - ratio > 1 means more "active", < 1 means more "suppressed"
+                        # Use sigmoid-like transform: higher norm = higher refusal resistance
+                        delta_norm = (norm_ratio - 1.0)  # Positive = amplified, Negative = suppressed
+                        
+                        # Convert to refusal/acceptance scores
+                        # Higher activation change suggests attack influence
+                        refusal_score = min(1.0, max(0.0, 0.5 - delta_norm * 0.3))
+                        acceptance_score = 1.0 - refusal_score
                 
                 # Compute delta from baseline
                 if layer_idx in baseline_scores:
-                    delta_refusal = refusal_score - baseline_scores[layer_idx]['refusal']
-                    delta_acceptance = acceptance_score - baseline_scores[layer_idx]['acceptance']
+                    delta_refusal = refusal_score - baseline_scores[layer_idx].get('refusal', 0.5)
+                    delta_acceptance = acceptance_score - baseline_scores[layer_idx].get('acceptance', 0.5)
                     
                     step_pattern['layer_deltas'][layer_idx] = delta_refusal
                     if abs(delta_refusal) > abs(step_pattern['max_delta_value']):
