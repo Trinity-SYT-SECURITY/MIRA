@@ -368,8 +368,16 @@ def main():
         if use_ssr and not SSR_AVAILABLE:
             print("  Warning: SSR requested but not available, using Gradient attack")
     
-    test_prompts = harmful_prompts[:num_attacks]
-    print(f"  Attack prompts: {len(test_prompts)} (user specified: {num_attacks})")
+    # Build test prompts list - cycle through available prompts if user requests more
+    if num_attacks <= len(harmful_prompts):
+        test_prompts = harmful_prompts[:num_attacks]
+    else:
+        # Cycle through prompts to reach requested count
+        test_prompts = []
+        for i in range(num_attacks):
+            test_prompts.append(harmful_prompts[i % len(harmful_prompts)])
+    
+    print(f"  Attack prompts: {len(test_prompts)} (unique: {len(harmful_prompts)}, requested: {num_attacks})")
     evaluator = AttackSuccessEvaluator()
     
     # Initialize attack based on type
