@@ -277,8 +277,13 @@ class LiveVisualizationServer:
         event_queue.put(event)
 
 
-# HTML Dashboard - MIRA Cybersecurity Neural Attack Monitor
-DASHBOARD_HTML = '''
+# Import enhanced dashboard
+try:
+    from mira.visualization.enhanced_dashboard import get_enhanced_dashboard
+    DASHBOARD_HTML = get_enhanced_dashboard()
+except ImportError:
+    # Fallback to inline HTML if import fails
+    DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>

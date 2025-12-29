@@ -251,7 +251,14 @@ class ProbeRunner:
         # Generate response
         try:
             response = self.model.generate(probe.prompt, max_new_tokens=100)
-            response_text = response.split(probe.prompt)[-1].strip()
+            # Handle both string and list return types
+            if isinstance(response, list):
+                response_text = response[0] if response else ""
+            else:
+                response_text = str(response)
+            # Remove the original prompt from response if present
+            if probe.prompt in response_text:
+                response_text = response_text.split(probe.prompt)[-1].strip()
         except Exception as e:
             response_text = f"Error: {e}"
         
