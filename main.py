@@ -396,6 +396,7 @@ def main():
     # Storage for baseline (clean) activations and attack tracking
     baseline_scores = {}
     pattern_history = []
+    layer_probs_cache = {}
     attack_tracker = {"total": 0, "success": 0}
     
     def detect_attack_pattern(pattern_history: list, num_layers: int) -> dict:
@@ -453,7 +454,7 @@ def main():
     # Real-time step callback for visualization
     def attack_step_callback(step, loss, suffix_tokens, model, prompt):
         """Send REAL transformer data during each attack step using probe predictions."""
-        nonlocal baseline_scores, pattern_history
+        nonlocal baseline_scores, pattern_history, layer_probs_cache
         
         if not server:
             return
@@ -611,6 +612,46 @@ def main():
                 baseline_refusal=baseline_scores.get(layer_idx, {}).get('refusal', 0.5),
                 direction="refusal" if refusal_score > acceptance_score else "acceptance",
             )
+            
+            # Send layer prediction for residual stream analysis
+            if layer_idx in current_acts and hasattr(outputs, 'logits'):
+                try:
+                    # Get top prediction at this layer using hidden state
+                    layer_hidden = current_acts[layer_idx]
+                    if layer_hidden.dim() == 2:
+                        last_hidden = layer_hidden[-1:, :]
+                    else:
+                        last_hidden = layer_hidden[0, -1:, :]
+                    
+                    # Project to vocabulary using output embedding
+                    with torch.no_grad():
+                        if hasattr(model.model, 'lm_head'):
+                            layer_logits = model.model.lm_head(last_hidden.to(model.device))
+                        elif hasattr(model.model, 'embed_out'):
+                            layer_logits = model.model.embed_out(last_hidden.to(model.device))
+                        else:
+                            layer_logits = None
+                        
+                        if layer_logits is not None:
+                            layer_probs = torch.softmax(layer_logits[0], dim=-1)
+                            top_prob, top_idx = torch.max(layer_probs, dim=-1)
+                            top_token = model.tokenizer.decode([top_idx.item()])
+                            
+                            # Calculate delta from previous layer
+                            prev_prob = 0.0
+                            if layer_idx > 0 and (layer_idx - 1) in current_acts:
+                                prev_prob = layer_probs_cache.get(layer_idx - 1, 0.0)
+                            
+                            layer_probs_cache[layer_idx] = float(top_prob.item())
+                            
+                            server.send_layer_prediction(
+                                layer_idx=layer_idx,
+                                token=top_token[:20],
+                                probability=float(top_prob.item()),
+                                delta=float(top_prob.item()) - prev_prob,
+                            )
+                except:
+                    pass
             
             # Send flow graph for current active layer
             if layer_idx == current_flow_layer:

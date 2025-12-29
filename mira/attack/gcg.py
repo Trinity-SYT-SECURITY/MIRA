@@ -1,9 +1,6 @@
 """
 GCG (Greedy Coordinate Gradient) Attack Implementation.
 
-Based on "Universal and Transferable Adversarial Attacks on Aligned Language Models"
-by Zou et al. (2023). https://arxiv.org/abs/2307.15043
-
 This attack optimizes adversarial suffixes by:
 1. Computing gradients w.r.t. token embeddings via one-hot trick
 2. Sampling candidate replacements from top-k gradient positions

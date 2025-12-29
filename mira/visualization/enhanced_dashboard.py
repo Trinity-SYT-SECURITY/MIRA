@@ -601,12 +601,18 @@ ENHANCED_DASHBOARD_HTML = '''
         const evtSource = new EventSource('/api/events');
         
         function log(message, type = 'default') {
-            const console = document.getElementById('console');
+            const consoleEl = document.getElementById('console');
             const line = document.createElement('div');
             line.className = 'console-line ' + type;
             line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            console.appendChild(line);
-            console.scrollTop = console.scrollHeight;
+            consoleEl.appendChild(line);
+            
+            // Keep only last 50 lines for performance
+            while (consoleEl.children.length > 50) {
+                consoleEl.removeChild(consoleEl.firstChild);
+            }
+            
+            consoleEl.scrollTop = consoleEl.scrollHeight;
         }
         
         log('Neural monitor initialized', 'success');

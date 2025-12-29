@@ -217,7 +217,7 @@ class ProbeRunner:
     """
     Runs attack probes against a model.
     
-    Similar to garak's probe system but integrated
+    Integrated probe system for testing various attack vectors
     with MIRA's attack framework.
     """
     

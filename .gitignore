@@ -33,7 +33,7 @@ env/
 .venv/
 .env/
 ENV/
-
+doc/
 # ===================
 # IDE and Editors
 # ===================
@@ -73,7 +73,7 @@ results/
 outputs/
 charts/
 figures/
-
+project
 # ===================
 # Test Data and Outputs
 # ===================

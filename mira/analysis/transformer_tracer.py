@@ -51,30 +51,50 @@ class TransformerTrace:
     
     def to_dict(self) -> Dict:
         """Convert to JSON-serializable dict for visualization."""
-        return {
-            "tokens": self.tokens,
-            "token_ids": self.token_ids.tolist(),
-            "embeddings": self.embeddings.detach().cpu().numpy().tolist(),
-            "layers": [
-                {
+        try:
+            layers_data = []
+            for layer in (self.layers or []):
+                try:
+                    layer_dict = {
                     "layer_idx": layer.layer_idx,
-                    "attention_weights": layer.attention_weights.detach().cpu().numpy().tolist(),
-                    "mlp_activations": layer.mlp_intermediate.detach().cpu().numpy().tolist(),
-                    "residual_norm": float(layer.residual_post.norm()),
+                        "attention_weights": layer.attention_weights.detach().cpu().numpy().tolist() if layer.attention_weights is not None else [],
+                        "mlp_activations": layer.mlp_intermediate.detach().cpu().numpy().tolist() if layer.mlp_intermediate is not None else [],
+                        "residual_norm": float(layer.residual_post.norm()) if layer.residual_post is not None else 0.0,
                 }
-                for layer in self.layers
-            ],
+                    layers_data.append(layer_dict)
+                except Exception:
+                    pass
+            
+            return {
+                "tokens": list(self.tokens) if self.tokens else [],
+                "token_ids": self.token_ids.tolist() if self.token_ids is not None else [],
+                "embeddings": self.embeddings.detach().cpu().numpy().tolist() if self.embeddings is not None else [],
+                "layers": layers_data,
             "final_logits_top5": self._get_top_predictions(5),
         }
+        except Exception:
+            return {"tokens": [], "token_ids": [], "embeddings": [], "layers": [], "final_logits_top5": []}
     
     def _get_top_predictions(self, k: int = 5) -> List[Dict]:
         """Get top-k predicted tokens for last position."""
-        last_logits = self.final_logits[-1]
-        top_k = torch.topk(last_logits, k)
-        return [
-            {"token_id": int(idx), "prob": float(torch.softmax(last_logits, dim=0)[idx])}
-            for idx in top_k.indices
-        ]
+        try:
+            if self.final_logits is None:
+                return []
+            if not hasattr(self.final_logits, 'shape') or len(self.final_logits.shape) == 0:
+                return []
+            if self.final_logits.shape[0] == 0:
+                return []
+            last_logits = self.final_logits[-1].detach().cpu()
+            if len(last_logits.shape) == 0 or last_logits.numel() == 0:
+                return []
+            top_k = torch.topk(last_logits, min(k, last_logits.numel()))
+            probs = torch.softmax(last_logits, dim=0)
+            return [
+                {"token_id": int(idx), "prob": float(probs[idx])}
+                for idx in top_k.indices
+            ]
+        except Exception:
+            return []
 
 
 class TransformerTracer:
@@ -153,9 +173,16 @@ class TransformerTracer:
         if attentions is not None and len(attentions) > 0:
             # We have real attention weights
             for layer_idx, attn_weights in enumerate(attentions):
-                attn = attn_weights[0].detach().cpu()
+                # Safely extract attention weights
+                try:
+                    if attn_weights is not None and hasattr(attn_weights, 'shape') and len(attn_weights.shape) > 0:
+                        attn = attn_weights[0].detach().cpu() if attn_weights.shape[0] > 0 else torch.zeros(1, 1, 1)
+                    else:
+                        attn = torch.zeros(1, 1, 1)
+                except (IndexError, RuntimeError):
+                    attn = torch.zeros(1, 1, 1)
                 
-                h_pre = hidden_states[layer_idx][0].detach().cpu() if hidden_states else torch.zeros(1, 1)
+                h_pre = hidden_states[layer_idx][0].detach().cpu() if hidden_states and len(hidden_states) > layer_idx else torch.zeros(1, 1)
                 h_post = hidden_states[layer_idx + 1][0].detach().cpu() if hidden_states and len(hidden_states) > layer_idx + 1 else torch.zeros(1, 1)
                 
                 layer_trace = LayerTrace(

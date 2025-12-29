@@ -82,13 +82,22 @@ class LiveVisualizationServer:
         def events():
             """SSE endpoint for real-time events."""
             def generate():
+                # Send initial connection event
+                yield f"data: {json.dumps({'event_type': 'connected', 'data': {}})}\n\n"
+                
                 while True:
                     try:
                         event = event_queue.get(timeout=1.0)
                         yield f"data: {event.to_json()}\n\n"
                     except:
-                        yield f"data: {json.dumps({'event_type': 'ping'})}\n\n"
-            return Response(generate(), mimetype="text/event-stream")
+                        # Send heartbeat ping to keep connection alive
+                        yield f"data: {json.dumps({'event_type': 'ping', 'data': {}})}\n\n"
+            
+            response = Response(generate(), mimetype="text/event-stream")
+            response.headers['Cache-Control'] = 'no-cache'
+            response.headers['Connection'] = 'keep-alive'
+            response.headers['X-Accel-Buffering'] = 'no'
+            return response
         
         @self.app.route("/api/status")
         def status():
@@ -147,8 +156,12 @@ class LiveVisualizationServer:
         acceptance_score: float,
         direction: str,
         top_tokens: List[tuple] = None,
+        delta_refusal: float = 0.0,
+        delta_acceptance: float = 0.0,
+        activation_norm: float = 1.0,
+        baseline_refusal: float = 0.5,
     ):
-        """Send layer processing update."""
+        """Send layer processing update with delta comparison."""
         event = VisualizationEvent(
             event_type="layer",
             data={
@@ -157,6 +170,10 @@ class LiveVisualizationServer:
                 "acceptance_score": acceptance_score,
                 "direction": direction,
                 "top_tokens": top_tokens or [],
+                "delta_refusal": delta_refusal,
+                "delta_acceptance": delta_acceptance,
+                "activation_norm": activation_norm,
+                "baseline_refusal": baseline_refusal,
             }
         )
         event_queue.put(event)
@@ -186,8 +203,10 @@ class LiveVisualizationServer:
         loss: float,
         suffix: str,
         success: bool = False,
+        prompt: str = None,
+        asr: float = 0.0,
     ):
-        """Send attack optimization step."""
+        """Send attack optimization step with ASR tracking."""
         event = VisualizationEvent(
             event_type="attack_step",
             data={
@@ -195,6 +214,8 @@ class LiveVisualizationServer:
                 "loss": loss,
                 "suffix": suffix,
                 "success": success,
+                "prompt": prompt,
+                "asr": asr,
             }
         )
         event_queue.put(event)
@@ -364,18 +385,145 @@ class LiveVisualizationServer:
         )
         event_queue.put(event)
 
+    @staticmethod
+    def send_flow_graph(
+        layer_idx: int,
+        nodes: List[Dict],
+        links: List[Dict],
+        step: int = 0,
+    ):
+        """
+        Send flow graph data for Sankey diagram visualization.
+        
+        Args:
+            layer_idx: Which transformer layer
+            nodes: List of node dicts with keys: label, color, customdata
+            links: List of link dicts with keys: source, target, value, color, customdata
+            step: Current attack step
+        """
+        event = VisualizationEvent(
+            event_type="flow_graph",
+            data={
+                "layer": layer_idx,
+                "nodes": nodes,
+                "links": links,
+                "step": step,
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
+    def send_console_message(
+        msg_type: str,
+        message: str,
+    ):
+        """
+        Send a message to the attack console display.
+        
+        Args:
+            msg_type: Type of message (ATTACK, RESPONSE, INFO, LAYER, ERROR)
+            message: The message content
+        """
+        event = VisualizationEvent(
+            event_type="console",
+            data={
+                "type": msg_type,
+                "message": message,
+            }
+        )
+        event_queue.put(event)
 
-# Import dashboard - use new transformer internals visualization
+    @staticmethod
+    def send_layer_prediction(
+        layer_idx: int,
+        token: str,
+        probability: float,
+        delta: float = 0.0,
+        before_ffn: str = None,
+        after_ffn: str = None,
+    ):
+        """
+        Send layer prediction for residual stream analysis.
+        
+        Shows how the model's top prediction evolves through each layer.
+        
+        Args:
+            layer_idx: Which transformer layer
+            token: Top predicted token at this layer
+            probability: Probability of the top token
+            delta: Change in probability from previous layer
+            before_ffn: Token prediction before FFN (optional)
+            after_ffn: Token prediction after FFN (optional)
+        """
+        event = VisualizationEvent(
+            event_type="layer_prediction",
+            data={
+                "layer": layer_idx,
+                "token": token,
+                "prob": probability,
+                "delta": delta,
+                "before_ffn": before_ffn,
+                "after_ffn": after_ffn,
+            }
+        )
+        event_queue.put(event)
+
+    @staticmethod
+    def send_ssr_buffer(
+        buffer: List[Dict],
+        best_loss: float,
+        n_replace: int,
+    ):
+        """
+        Send SSR buffer state for visualization.
+        
+        Displays the current candidate buffer in SSR attack mode.
+        
+        Args:
+            buffer: List of buffer items with keys: tokens, loss
+            best_loss: Best loss value in buffer
+            n_replace: Number of tokens being replaced
+        """
+        event = VisualizationEvent(
+            event_type="ssr_buffer",
+            data={
+                "buffer": buffer[:10],  # Limit to top 10
+                "best_loss": best_loss,
+                "n_replace": n_replace,
+            }
+        )
+        event_queue.put(event)
+
+    @staticmethod
+    def send_ssr_mode(enabled: bool = True):
+        """
+        Enable or disable SSR mode in visualization.
+        
+        Args:
+            enabled: Whether SSR mode is active
+        """
+        event = VisualizationEvent(
+            event_type="ssr_mode",
+            data={"enabled": enabled}
+        )
+        event_queue.put(event)
+
+
+# Import dashboard - use flow graph visualization
 try:
-    from mira.visualization.transformer_internals import get_transformer_internals_html
-    DASHBOARD_HTML = get_transformer_internals_html()
+    from mira.visualization.flow_graph_viz import get_flow_graph_html
+    DASHBOARD_HTML = get_flow_graph_html()
 except ImportError:
     try:
-        from mira.visualization.attack_flow import get_attack_flow_html
-        DASHBOARD_HTML = get_attack_flow_html()
+        from mira.visualization.transformer_detailed_viz import get_detailed_transformer_html
+        DASHBOARD_HTML = get_detailed_transformer_html()
     except ImportError:
-        # Fallback to inline HTML if import fails
-        DASHBOARD_HTML = '''
+        try:
+            from mira.visualization.transformer_attack_viz import get_transformer_attack_html
+            DASHBOARD_HTML = get_transformer_attack_html()
+        except ImportError:
+            # Fallback to inline HTML if import fails
+            DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -956,12 +1104,18 @@ except ImportError:
         const evtSource = new EventSource('/api/events');
         
         function log(msg, type = 'info') {
-            const console = document.getElementById('console');
+            const consoleEl = document.getElementById('console');
             const line = document.createElement('div');
             line.className = 'console-line ' + type;
             line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
-            console.appendChild(line);
-            console.scrollTop = console.scrollHeight;
+            consoleEl.appendChild(line);
+            
+            // Keep only last 50 lines for performance
+            while (consoleEl.children.length > 50) {
+                consoleEl.removeChild(consoleEl.firstChild);
+            }
+            
+            consoleEl.scrollTop = consoleEl.scrollHeight;
         }
         
         log('Neural monitor initialized', 'success');

@@ -44,7 +44,7 @@ def main():
     viz_app = create_transformer_viz_app(port=5001)
     
     def run_server():
-        viz_app.run(host='127.0.0.1', port=5001, debug=False, use_reloader=False)
+        viz_app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False)
     
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()

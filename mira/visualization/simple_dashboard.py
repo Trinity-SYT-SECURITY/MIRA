@@ -294,12 +294,18 @@ SIMPLE_DASHBOARD_HTML = '''
         const evtSource = new EventSource('/api/events');
         
         function log(msg, type = 'info') {
-            const console = document.getElementById('console');
+            const consoleEl = document.getElementById('console');
             const entry = document.createElement('div');
             entry.className = 'log-entry ' + type;
             entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            console.appendChild(entry);
-            console.scrollTop = console.scrollHeight;
+            consoleEl.appendChild(entry);
+            
+            // Keep only last 50 lines for performance
+            while (consoleEl.children.length > 50) {
+                consoleEl.removeChild(consoleEl.firstChild);
+            }
+            
+            consoleEl.scrollTop = consoleEl.scrollHeight;
         }
         
         log('Dashboard initialized', 'success');
