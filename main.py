@@ -223,14 +223,14 @@ def main():
     for i, prompt in enumerate(test_prompts):
         print(f"\n  [{i+1}/{len(test_prompts)}] {prompt[:45]}...")
         
-        # Skip transformer tracing for now - focus on attack visualization
-        # Will re-enable after fixing trace issues
+        # Send initial layer update for live viz
         if server:
-            # Just log that we're starting the attack
-            server.send_layer_update(layer=0, refusal_score=0.0, acceptance_score=0.0)
-        
-        # Note: Trace Error was happening here - disabled temporarily
-        # TODO: Fix TransformerTracer to_dict() serialization
+            server.send_layer_update(
+                layer_idx=0, 
+                refusal_score=0.0, 
+                acceptance_score=0.0,
+                direction="forward"
+            )
         
         # Send initial attack state to live viz
         if server:
