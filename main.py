@@ -243,38 +243,56 @@ def main():
                 # Get trace with attention weights
                 trace = tracer.trace_forward(input_ids)
                 
+                # Check if trace is valid
+                if trace is None:
+                    return
+                
                 # Send embeddings (token vectors)
-                if trace.tokens:
+                if trace.tokens and len(trace.tokens) > 0:
+                    emb_list = []
+                    if trace.embeddings is not None:
+                        try:
+                            emb_list = trace.embeddings[:20].tolist() if hasattr(trace.embeddings, 'tolist') else []
+                        except:
+                            emb_list = []
                     server.send_embeddings(
                         tokens=trace.tokens[:20],  # Limit to first 20 tokens
-                        embeddings=trace.embeddings[:20].tolist() if hasattr(trace.embeddings, 'tolist') else []
+                        embeddings=emb_list
                     )
                 
-                # Send layer-by-layer updates
-                for layer_idx, layer_trace in enumerate(trace.layers[:6]):  # First 6 layers
-                    # Calculate refusal/acceptance scores from attention
-                    attn = layer_trace.attention_pattern
-                    if attn is not None and len(attn.shape) >= 2:
-                        avg_attn = float(attn.mean())
-                        server.send_layer_update(
-                            layer_idx=layer_idx,
-                            refusal_score=avg_attn * (1 - step / 30),
-                            acceptance_score=avg_attn * (step / 30),
-                            direction="forward" if step < 15 else "backward",
-                        )
+                # Send layer-by-layer updates (only if layers exist)
+                if trace.layers is not None and len(trace.layers) > 0:
+                    for layer_idx, layer_trace in enumerate(trace.layers[:6]):  # First 6 layers
+                        if layer_trace is None:
+                            continue
                         
-                        # Send attention matrix for visualization
-                        if layer_idx == 0:  # First layer attention
-                            weights = attn[:8, :8].tolist() if len(attn) >= 8 else attn.tolist()
-                            server.send_attention_matrix(
-                                layer_idx=layer_idx,
-                                head_idx=0,
-                                attention_weights=weights,
-                                tokens=trace.tokens[:8] if trace.tokens else [],
-                            )
+                        # Calculate refusal/acceptance scores from attention
+                        attn = getattr(layer_trace, 'attention_pattern', None)
+                        if attn is not None and hasattr(attn, 'shape') and len(attn.shape) >= 2:
+                            try:
+                                avg_attn = float(attn.mean())
+                                server.send_layer_update(
+                                    layer_idx=layer_idx,
+                                    refusal_score=avg_attn * (1 - step / 30),
+                                    acceptance_score=avg_attn * (step / 30),
+                                    direction="forward" if step < 15 else "backward",
+                                )
+                                
+                                # Send attention matrix for visualization
+                                if layer_idx == 0:  # First layer attention
+                                    n = min(8, attn.shape[0], attn.shape[1])
+                                    weights = attn[:n, :n].tolist()
+                                    server.send_attention_matrix(
+                                        layer_idx=layer_idx,
+                                        head_idx=0,
+                                        attention_weights=weights,
+                                        tokens=trace.tokens[:n] if trace.tokens else [],
+                                    )
+                            except Exception:
+                                pass  # Skip this layer if any error
                 
             except Exception as e:
-                # Silently handle trace errors
+                # Silently handle trace errors - don't break attack
                 pass
     
     attack_results = []
