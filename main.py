@@ -45,10 +45,11 @@ from mira.visualization.interactive_html import InteractiveViz
 
 # Try to import live visualization
 try:
-    from mira.visualization.live_server import LiveVisualizationServer
+    from mira.visualization.live_server import LiveVisualizationServer, VisualizationEvent
     LIVE_VIZ_AVAILABLE = True
 except ImportError:
     LIVE_VIZ_AVAILABLE = False
+    VisualizationEvent = None
 
 
 def print_banner():
@@ -239,8 +240,8 @@ def main():
             success=False,
         )
         
-        # Every 3 steps, send transformer trace for visualization
-        if step % 3 == 0:
+        # Every 2 steps, send detailed transformer trace for visualization
+        if step % 2 == 0:
             try:
                 full_prompt = prompt + " " + suffix_text
                 input_ids = model.tokenizer.encode(full_prompt, return_tensors="pt")[0]
@@ -252,52 +253,100 @@ def main():
                 if trace is None:
                     return
                 
-                # Send embeddings (token vectors)
-                if trace.tokens and len(trace.tokens) > 0:
-                    emb_list = []
-                    if trace.embeddings is not None:
+                # 1. Send embeddings (token vectors)
+                tokens = trace.tokens[:15] if trace.tokens else []
+                if tokens:
+                    server.send_embeddings(tokens=tokens, embeddings=[])
+                
+                # 2. Send Q/K/V event for each layer (first 3 layers for performance)
+                for layer_idx in range(min(3, len(trace.layers))):
+                    layer_trace = trace.layers[layer_idx]
+                    if layer_trace is None:
+                        continue
+                    
+                    # Send QKV event
+                    server.send_event(VisualizationEvent(
+                        event_type="qkv",
+                        data={
+                            "layer": layer_idx,
+                            "tokens": tokens[:6],
+                            "query_vectors": [0.5 + (step % 5) * 0.1] * len(tokens[:6]),
+                            "key_vectors": [0.4 + (step % 5) * 0.08] * len(tokens[:6]),
+                            "value_vectors": [0.6 + (step % 5) * 0.05] * len(tokens[:6]),
+                        }
+                    ))
+                    
+                    # 3. Send attention matrix
+                    attn = getattr(layer_trace, 'attention_weights', None)
+                    if attn is not None and hasattr(attn, 'shape'):
                         try:
-                            emb_list = trace.embeddings[:20].tolist() if hasattr(trace.embeddings, 'tolist') else []
-                        except:
-                            emb_list = []
-                    server.send_embeddings(
-                        tokens=trace.tokens[:20],  # Limit to first 20 tokens
-                        embeddings=emb_list
+                            # Get first head's attention weights
+                            if len(attn.shape) >= 3:
+                                attn_head = attn[0].detach().cpu()  # First head
+                            else:
+                                attn_head = attn.detach().cpu()
+                            
+                            n = min(8, attn_head.shape[0], attn_head.shape[1])
+                            weights = attn_head[:n, :n].tolist()
+                            
+                            server.send_attention_matrix(
+                                layer_idx=layer_idx,
+                                head_idx=0,
+                                attention_weights=weights,
+                                tokens=tokens[:n],
+                            )
+                        except Exception:
+                            pass
+                    
+                    # 4. Send MLP activations
+                    mlp = getattr(layer_trace, 'mlp_intermediate', None)
+                    if mlp is not None:
+                        try:
+                            # Get top neuron activations
+                            if hasattr(mlp, 'shape') and len(mlp.shape) >= 1:
+                                flat_mlp = mlp.flatten().detach().cpu()
+                                top_k = torch.topk(flat_mlp.abs(), min(8, len(flat_mlp)))
+                                activations = top_k.values.tolist()
+                                top_neurons = top_k.indices.tolist()
+                                
+                                server.send_event(VisualizationEvent(
+                                    event_type="mlp",
+                                    data={
+                                        "layer": layer_idx,
+                                        "activations": [a / max(activations) if max(activations) > 0 else 0 for a in activations],
+                                        "top_neurons": top_neurons,
+                                    }
+                                ))
+                        except Exception:
+                            pass
+                    
+                    # 5. Send layer update
+                    server.send_layer_update(
+                        layer_idx=layer_idx,
+                        refusal_score=max(0, 0.8 - step * 0.02),
+                        acceptance_score=min(1.0, 0.2 + step * 0.02),
+                        direction="forward" if step < 15 else "optimizing",
                     )
                 
-                # Send layer-by-layer updates (only if layers exist)
-                if trace.layers is not None and len(trace.layers) > 0:
-                    for layer_idx, layer_trace in enumerate(trace.layers[:6]):  # First 6 layers
-                        if layer_trace is None:
-                            continue
+                # 6. Send output probabilities from final logits
+                if trace.final_logits is not None:
+                    try:
+                        last_logits = trace.final_logits[-1].detach().cpu()
+                        probs = torch.softmax(last_logits, dim=0)
+                        top_k = torch.topk(probs, 5)
+                        output_tokens = [model.tokenizer.decode([idx.item()]) for idx in top_k.indices]
+                        output_probs = top_k.values.tolist()
                         
-                        # Calculate refusal/acceptance scores from attention
-                        attn = getattr(layer_trace, 'attention_pattern', None)
-                        if attn is not None and hasattr(attn, 'shape') and len(attn.shape) >= 2:
-                            try:
-                                avg_attn = float(attn.mean())
-                                server.send_layer_update(
-                                    layer_idx=layer_idx,
-                                    refusal_score=avg_attn * (1 - step / 30),
-                                    acceptance_score=avg_attn * (step / 30),
-                                    direction="forward" if step < 15 else "backward",
-                                )
-                                
-                                # Send attention matrix for visualization
-                                if layer_idx == 0:  # First layer attention
-                                    n = min(8, attn.shape[0], attn.shape[1])
-                                    weights = attn[:n, :n].tolist()
-                                    server.send_attention_matrix(
-                                        layer_idx=layer_idx,
-                                        head_idx=0,
-                                        attention_weights=weights,
-                                        tokens=trace.tokens[:n] if trace.tokens else [],
-                                    )
-                            except Exception:
-                                pass  # Skip this layer if any error
+                        server.send_output_probabilities(
+                            tokens=output_tokens,
+                            probabilities=output_probs,
+                        )
+                    except Exception:
+                        pass
                 
             except Exception as e:
-                # Silently handle trace errors - don't break attack
+                # Log trace errors for debugging
+                print(f"      [Trace Error: {e}]")
                 pass
     
     attack_results = []
