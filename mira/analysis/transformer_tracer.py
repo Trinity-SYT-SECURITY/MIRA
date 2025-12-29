@@ -126,15 +126,48 @@ class TransformerTracer:
         self.layer_traces = []
         self.embeddings = None
         
-        # Register hooks
+        # Register hooks for embeddings
         self._register_hooks()
         
-        # Forward pass
+        # Forward pass with attention outputs
         with torch.no_grad():
-            outputs = self.model(input_ids)
+            outputs = self.model(
+                input_ids, 
+                output_attentions=True,  # Key: get attention weights
+                output_hidden_states=True,  # Get all hidden states
+            )
         
         # Remove hooks
         self._remove_hooks()
+        
+        # Extract attention weights from outputs
+        attentions = outputs.attentions  # Tuple of (num_layers,) each [batch, heads, seq, seq]
+        hidden_states = outputs.hidden_states  # Tuple of (num_layers+1,) each [batch, seq, hidden]
+        
+        # Build layer traces with real attention weights
+        self.layer_traces = []
+        for layer_idx, attn_weights in enumerate(attentions):
+            # attn_weights shape: [batch, num_heads, seq_len, seq_len]
+            attn = attn_weights[0].detach()  # Remove batch dim
+            
+            # Get hidden states for this layer
+            h_pre = hidden_states[layer_idx][0].detach()  # Before layer
+            h_post = hidden_states[layer_idx + 1][0].detach()  # After layer
+            
+            layer_trace = LayerTrace(
+                layer_idx=layer_idx,
+                query=torch.zeros(1, 1, 1),  # Would need deeper hooks
+                key=torch.zeros(1, 1, 1),
+                value=torch.zeros(1, 1, 1),
+                attention_weights=attn,  # Real attention! [num_heads, seq_len, seq_len]
+                attention_out=h_post,
+                mlp_in=h_pre,
+                mlp_intermediate=torch.zeros(1, 1),  # Would need deeper hooks
+                mlp_out=h_post,
+                residual_pre=h_pre,
+                residual_post=h_post,
+            )
+            self.layer_traces.append(layer_trace)
         
         # Decode tokens
         tokens = self.tokenizer.convert_ids_to_tokens(input_ids[0])
@@ -143,7 +176,7 @@ class TransformerTracer:
         trace = TransformerTrace(
             tokens=tokens,
             token_ids=input_ids[0],
-            embeddings=self.embeddings,
+            embeddings=self.embeddings if self.embeddings is not None else hidden_states[0][0],
             layers=self.layer_traces,
             final_logits=outputs.logits[0],
         )

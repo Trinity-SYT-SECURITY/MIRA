@@ -240,6 +240,19 @@ def main():
                     trace_data=normal_trace.to_dict(),
                     trace_type="normal"
                 )
+                
+                # Send attention matrices for each layer/head
+                for layer in normal_trace.layers:
+                    attn_weights = layer.attention_weights  # [num_heads, seq, seq]
+                    if attn_weights is not None and attn_weights.numel() > 1:
+                        num_heads = attn_weights.shape[0]
+                        for head_idx in range(num_heads):
+                            server.send_attention_matrix(
+                                layer_idx=layer.layer_idx,
+                                head_idx=head_idx,
+                                attention_weights=attn_weights[head_idx].cpu().numpy().tolist(),
+                                tokens=normal_trace.tokens
+                            )
             except Exception as e:
                 print(f"      [Trace Error: {e}]")
         

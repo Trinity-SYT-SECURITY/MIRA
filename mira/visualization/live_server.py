@@ -275,15 +275,46 @@ class LiveVisualizationServer:
             data=summary
         )
         event_queue.put(event)
+    
+    @staticmethod
+    def send_attention_matrix(
+        layer_idx: int,
+        head_idx: int,
+        attention_weights: List[List[float]],  # [seq_len, seq_len]
+        tokens: List[str],
+    ):
+        """
+        Send attention matrix for visualization.
+        
+        Args:
+            layer_idx: Which layer
+            head_idx: Which attention head
+            attention_weights: 2D matrix [seq, seq] of attention values
+            tokens: List of token strings
+        """
+        event = VisualizationEvent(
+            event_type="attention_matrix",
+            data={
+                "layer": layer_idx,
+                "head": head_idx,
+                "weights": attention_weights,
+                "tokens": tokens,
+            }
+        )
+        event_queue.put(event)
 
 
-# Import enhanced dashboard
+# Import enhanced dashboard with attention visualization
 try:
-    from mira.visualization.enhanced_dashboard import get_enhanced_dashboard
-    DASHBOARD_HTML = get_enhanced_dashboard()
+    from mira.visualization.attention_viz import get_attention_viz_html
+    DASHBOARD_HTML = get_attention_viz_html()
 except ImportError:
-    # Fallback to inline HTML if import fails
-    DASHBOARD_HTML = '''
+    try:
+        from mira.visualization.enhanced_dashboard import get_enhanced_dashboard
+        DASHBOARD_HTML = get_enhanced_dashboard()
+    except ImportError:
+        # Fallback to inline HTML if import fails
+        DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
