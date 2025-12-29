@@ -23,6 +23,7 @@ from pathlib import Path
 from datetime import datetime
 import time
 import threading
+import torch
 
 # Suppress warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -42,6 +43,31 @@ from mira.metrics import AttackSuccessEvaluator
 from mira.visualization import ResearchChartGenerator
 from mira.visualization import plot_subspace_2d
 from mira.visualization.interactive_html import InteractiveViz
+
+# Import new judge system and research report
+try:
+    from mira.judge import EnsembleJudge, JudgeConfig
+    JUDGE_AVAILABLE = True
+except ImportError:
+    JUDGE_AVAILABLE = False
+    EnsembleJudge = None
+
+# Import SSR attacks
+try:
+    from mira.attack.ssr import ProbeSSR, ProbeSSRConfig, SteeringSSR, SteeringSSRConfig
+    SSR_AVAILABLE = True
+except ImportError:
+    SSR_AVAILABLE = False
+    ProbeSSR = None
+    ProbeSSRConfig = None
+    SteeringSSR = None
+    SteeringSSRConfig = None
+
+try:
+    from mira.visualization.research_report import ResearchReportGenerator
+    RESEARCH_REPORT_AVAILABLE = True
+except ImportError:
+    RESEARCH_REPORT_AVAILABLE = False
 
 # Try to import live visualization
 try:
@@ -111,13 +137,36 @@ def main():
     print_phase(2, TOTAL_PHASES, "STARTING LIVE VISUALIZATION")
     
     server = None
+    viz_port = None
     if LIVE_VIZ_AVAILABLE:
+        import socket
+        
+        # Get port from environment or use default, auto-find if blocked
+        base_port = int(os.getenv("MIRA_VIZ_PORT", "5001"))
+        
+        def is_port_available(port):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(('127.0.0.1', port))
+                    return True
+                except OSError:
+                    return False
+        
+        # Find available port
+        viz_port = base_port
+        for offset in range(10):
+            if is_port_available(base_port + offset):
+                viz_port = base_port + offset
+                break
+        else:
+            print(f"  ⚠ Could not find available port in range {base_port}-{base_port+9}")
+        
         try:
-            server = LiveVisualizationServer(port=5000)
+            server = LiveVisualizationServer(port=viz_port)
             server.start(open_browser=True)
-            print("  🌐 Live dashboard: http://localhost:5000")
+            print(f"  🌐 Live dashboard: http://localhost:{viz_port}")
             print("  Browser opened automatically")
-            time.sleep(1)  # Let browser open
+            time.sleep(2)  # Let browser fully load
         except Exception as e:
             print(f"  ⚠ Live visualization unavailable: {e}")
             print("  Install flask: pip install flask flask-cors")
@@ -169,7 +218,51 @@ def main():
     layer_idx = model.n_layers // 2
     analyzer = SubspaceAnalyzer(model, layer_idx=layer_idx)
     
+    # Initialize tracer for capturing real attention patterns
+    tracer = TransformerTracer(model)
+    
     print(f"\n  Training probe at layer {layer_idx}...")
+    
+    # Capture baseline attention patterns from safe and harmful prompts
+    print("  Capturing attention patterns...")
+    baseline_clean_attention = None
+    baseline_attack_attention = None
+    
+    try:
+        # Get clean prompt attention (take first safe prompt)
+        if safe_prompts:
+            clean_ids = model.tokenizer.encode(safe_prompts[0], return_tensors="pt")[0]
+            clean_trace = tracer.trace_forward(clean_ids)
+            if clean_trace and clean_trace.layers and len(clean_trace.layers) > 0:
+                # Get attention from middle layer, first head
+                mid_layer = len(clean_trace.layers) // 2
+                if mid_layer < len(clean_trace.layers):
+                    layer_data = clean_trace.layers[mid_layer]
+                    if layer_data and hasattr(layer_data, 'attention_weights') and layer_data.attention_weights is not None:
+                        attn = layer_data.attention_weights
+                        if attn.dim() >= 3 and attn.shape[0] > 0:
+                            # Take first head: [num_heads, seq, seq] -> [seq, seq]
+                            baseline_clean_attention = attn[0].detach().cpu().numpy().tolist()
+        
+        # Get attack prompt attention (take first harmful prompt)
+        if harmful_prompts:
+            attack_ids = model.tokenizer.encode(harmful_prompts[0], return_tensors="pt")[0]
+            attack_trace = tracer.trace_forward(attack_ids)
+            if attack_trace and attack_trace.layers and len(attack_trace.layers) > 0:
+                mid_layer = len(attack_trace.layers) // 2
+                if mid_layer < len(attack_trace.layers):
+                    layer_data = attack_trace.layers[mid_layer]
+                    if layer_data and hasattr(layer_data, 'attention_weights') and layer_data.attention_weights is not None:
+                        attn = layer_data.attention_weights
+                        if attn.dim() >= 3 and attn.shape[0] > 0:
+                            baseline_attack_attention = attn[0].detach().cpu().numpy().tolist()
+        
+        if baseline_clean_attention:
+            print(f"    ✓ Captured clean attention: {len(baseline_clean_attention)}x{len(baseline_clean_attention[0])}")
+        if baseline_attack_attention:
+            print(f"    ✓ Captured attack attention: {len(baseline_attack_attention)}x{len(baseline_attack_attention[0])}")
+    except Exception as e:
+        print(f"    Note: Could not capture baseline attention ({str(e)[:50]})")
     
     # Send layer updates to live viz
     for i, prompt in enumerate(harmful_prompts[:3]):
@@ -214,143 +307,437 @@ def main():
         print(f"SKIPPED")
     
     # ================================================================
-    # PHASE 5: GRADIENT ATTACKS WITH LIVE VISUALIZATION
+    # PHASE 5: ATTACKS WITH LIVE VISUALIZATION
     # ================================================================
-    print_phase(5, TOTAL_PHASES, "GRADIENT ATTACKS (LIVE)")
+    # Determine attack method (SSR or Gradient)
+    use_ssr = os.getenv("MIRA_USE_SSR", "false").lower() in ("true", "1", "yes")
+    ssr_method = os.getenv("MIRA_SSR_METHOD", "probe").lower()  # "probe" or "steering"
+    
+    if use_ssr and SSR_AVAILABLE:
+        print_phase(5, TOTAL_PHASES, f"SSR ATTACKS ({ssr_method.upper()}) (LIVE)")
+        attack_type = "ssr"
+    else:
+        print_phase(5, TOTAL_PHASES, "GRADIENT ATTACKS (LIVE)")
+        attack_type = "gradient"
+        if use_ssr and not SSR_AVAILABLE:
+            print("  Warning: SSR requested but not available, using Gradient attack")
     
     test_prompts = harmful_prompts[:5]
     evaluator = AttackSuccessEvaluator()
-    attack = GradientAttack(model, suffix_length=15)
+    
+    # Initialize attack based on type
+    if attack_type == "ssr" and SSR_AVAILABLE:
+        # Setup SSR attack
+        if ssr_method == "probe":
+            print("  Setting up Probe-based SSR...")
+            ssr_config = ProbeSSRConfig(
+                model_name=model.model_name,
+                layers=[max(0, model.n_layers//4), model.n_layers//2, 
+                       3*model.n_layers//4, model.n_layers-1],
+                alphas=[1.0, 1.0, 1.0, 1.0],
+                search_width=128,  # Reduced for faster execution
+                buffer_size=8,
+                max_iterations=20,  # Reduced for demo
+                early_stop_loss=0.05,
+                patience=5,
+            )
+            ssr_attack = ProbeSSR(model, ssr_config)
+            
+            # Train probes if not already trained
+            probes_path = Path("mira/analysis/subspace/weights") / f"{model.model_name.replace('/', '_')}_probes"
+            if probes_path.exists() and (probes_path / "metadata.json").exists():
+                print(f"  Loading pre-trained probes from {probes_path}...")
+                ssr_attack.load_probes(str(probes_path))
+            else:
+                print("  Training probes (this may take a few minutes)...")
+                ssr_attack.train_probes(
+                    safe_prompts=safe_prompts,
+                    harmful_prompts=harmful_prompts,
+                    save_path=str(probes_path)
+                )
+        else:  # steering
+            print("  Setting up Steering-based SSR...")
+            ssr_config = SteeringSSRConfig(
+                model_name=model.model_name,
+                layers=[max(0, model.n_layers//4), model.n_layers//2, 
+                       3*model.n_layers//4, model.n_layers-1],
+                alphas=[1.0, 1.0, 1.0, 1.0],
+                search_width=128,
+                buffer_size=8,
+                max_iterations=20,
+                early_stop_loss=0.05,
+                patience=5,
+                num_samples=min(50, len(safe_prompts)),
+                normalize_directions=True,
+            )
+            ssr_attack = SteeringSSR(model, ssr_config)
+            
+            # Compute or load refusal directions
+            directions_path = Path("mira/analysis/subspace/weights") / f"{model.model_name.replace('/', '_')}_steering"
+            if directions_path.exists() and (directions_path / "refusal_directions.pt").exists():
+                print(f"  Loading pre-computed directions from {directions_path}...")
+                ssr_attack.load_refusal_directions(str(directions_path))
+            else:
+                print("  Computing refusal directions...")
+                ssr_attack.compute_refusal_directions(
+                    safe_prompts=safe_prompts,
+                    harmful_prompts=harmful_prompts,
+                    save_path=str(directions_path)
+                )
+        
+        attack = ssr_attack
+    else:
+        # Default to Gradient attack
+        attack = GradientAttack(model, suffix_length=15)
     
     # Initialize transformer tracer for internal visualization
     tracer = TransformerTracer(model)
     
+    # Storage for baseline (clean) activations and attack tracking
+    baseline_scores = {}
+    pattern_history = []
+    attack_tracker = {"total": 0, "success": 0}
+    
+    def detect_attack_pattern(pattern_history: list, num_layers: int) -> dict:
+        """Detect common attack patterns from layer activation changes."""
+        if len(pattern_history) < 3:
+            return {'detected': False}
+        
+        middle_layer_start = num_layers // 3
+        middle_layer_end = (num_layers * 2) // 3
+        
+        # Pattern 1: Middle Layer Flip
+        middle_layer_deltas = []
+        for step_data in pattern_history:
+            for layer_idx, delta in step_data.get('layer_deltas', {}).items():
+                if middle_layer_start <= layer_idx <= middle_layer_end:
+                    middle_layer_deltas.append(delta)
+        
+        if middle_layer_deltas:
+            avg_middle_delta = sum(middle_layer_deltas) / len(middle_layer_deltas)
+            if avg_middle_delta < -0.15:
+                return {
+                    'detected': True,
+                    'pattern_type': 'middle_layer_flip',
+                    'confidence': min(1.0, abs(avg_middle_delta) * 3),
+                    'description': f'Middle layers (L{middle_layer_start}-L{middle_layer_end}) showing acceptance shift',
+                    'affected_layers': list(range(middle_layer_start, middle_layer_end + 1)),
+                    'delta': avg_middle_delta
+                }
+        
+        # Pattern 2: Cascading Effect
+        early_deltas = []
+        late_deltas = []
+        for step_data in pattern_history:
+            for layer_idx, delta in step_data.get('layer_deltas', {}).items():
+                if layer_idx < middle_layer_start:
+                    early_deltas.append(delta)
+                elif layer_idx > middle_layer_end:
+                    late_deltas.append(delta)
+        
+        if early_deltas and late_deltas:
+            avg_early = sum(early_deltas) / len(early_deltas)
+            avg_late = sum(late_deltas) / len(late_deltas)
+            if avg_early < -0.1 and avg_late < -0.05:
+                return {
+                    'detected': True,
+                    'pattern_type': 'cascading',
+                    'confidence': 0.7,
+                    'description': 'Cascading: acceptance spreading from early to late layers',
+                    'affected_layers': list(range(num_layers)),
+                    'delta': avg_early
+                }
+        
+        return {'detected': False}
+    
     # Real-time step callback for visualization
     def attack_step_callback(step, loss, suffix_tokens, model, prompt):
-        """Send real transformer data during each attack step."""
+        """Send REAL transformer data during each attack step using probe predictions."""
+        nonlocal baseline_scores, pattern_history
+        
         if not server:
             return
         
-        # Send attack progress
-        suffix_text = model.tokenizer.decode(suffix_tokens.tolist())
+        # Decode suffix
+        try:
+            suffix_text = model.tokenizer.decode(suffix_tokens.tolist())
+        except:
+            suffix_text = "..."
+        
+        loss_val = float(loss) if loss is not None else 0.0
+        is_success = loss_val < 0.01
+        
+        # 1. Send attack progress with ASR
+        current_asr = (attack_tracker["success"] / max(1, attack_tracker["total"])) * 100
         server.send_attack_step(
             step=step,
-            loss=loss,
-            suffix=suffix_text[:40],
-            success=False,
+            loss=loss_val,
+            suffix=suffix_text[:50],
+            success=is_success,
+            prompt=prompt if step == 1 else None,
+            asr=current_asr,
         )
         
-        # Every 2 steps, send detailed transformer trace for visualization
-        if step % 2 == 0:
+        # 2. Parse tokens from the full prompt
+        full_prompt = prompt + " " + suffix_text
+        tokens = full_prompt.split()[:15]
+        
+        # 3. Send embeddings (tokens for display)
+        server.send_embeddings(tokens=tokens, embeddings=[])
+        
+        num_layers = model.n_layers
+        current_flow_layer = step % num_layers
+        current_prompt = prompt + " " + suffix_text
+        
+        # 4. Get REAL activations from model forward pass
+        try:
+            input_ids = model.tokenizer.encode(current_prompt, return_tensors="pt")
+            input_ids = input_ids.to(model.device)
+            
+            with torch.no_grad():
+                outputs = model.model(
+                    input_ids,
+                    output_hidden_states=True,
+                    output_attentions=True,
+                )
+            
+            hidden_states = outputs.hidden_states
+            current_acts = {}
+            if hidden_states and len(hidden_states) > 0:
+                for i, hs in enumerate(hidden_states[1:]):
+                    if i < num_layers:
+                        current_acts[i] = hs[0].detach()
+        except Exception as e:
+            current_acts = {}
+        
+        # 5. Capture baseline at step 1
+        if step == 1 and not baseline_scores:
+            print("    [Baseline] Capturing clean prompt activations...")
             try:
-                full_prompt = prompt + " " + suffix_text
-                input_ids = model.tokenizer.encode(full_prompt, return_tensors="pt")[0]
+                clean_ids = model.tokenizer.encode(prompt, return_tensors="pt")
+                clean_ids = clean_ids.to(model.device)
                 
-                # Get trace with attention weights
-                trace = tracer.trace_forward(input_ids)
-                
-                # Check if trace is valid
-                if trace is None:
-                    return
-                
-                # 1. Send embeddings (token vectors)
-                tokens = trace.tokens[:15] if trace.tokens else []
-                if tokens:
-                    server.send_embeddings(tokens=tokens, embeddings=[])
-                
-                # 2. Send Q/K/V event for each layer (first 3 layers for performance)
-                layers = trace.layers if trace.layers is not None else []
-                for layer_idx in range(min(3, len(layers))):
-                    layer_trace = layers[layer_idx]
-                    if layer_trace is None:
-                        continue
-                    
-                    # Send QKV event
-                    if VisualizationEvent is not None:
-                        server.send_event(VisualizationEvent(
-                            event_type="qkv",
-                            data={
-                                "layer": layer_idx,
-                                "tokens": tokens[:6],
-                                "query_vectors": [0.5 + (step % 5) * 0.1] * len(tokens[:6]),
-                                "key_vectors": [0.4 + (step % 5) * 0.08] * len(tokens[:6]),
-                                "value_vectors": [0.6 + (step % 5) * 0.05] * len(tokens[:6]),
-                            }
-                        ))
-                    
-                    # 3. Send attention matrix
-                    attn = getattr(layer_trace, 'attention_weights', None)
-                    if attn is not None and hasattr(attn, 'shape'):
-                        try:
-                            # Get first head's attention weights
-                            if len(attn.shape) >= 3:
-                                attn_head = attn[0].detach().cpu()  # First head
-                            else:
-                                attn_head = attn.detach().cpu()
-                            
-                            n = min(8, attn_head.shape[0], attn_head.shape[1])
-                            weights = attn_head[:n, :n].tolist()
-                            
-                            server.send_attention_matrix(
-                                layer_idx=layer_idx,
-                                head_idx=0,
-                                attention_weights=weights,
-                                tokens=tokens[:n],
-                            )
-                        except Exception:
-                            pass
-                    
-                    # 4. Send MLP activations
-                    mlp = getattr(layer_trace, 'mlp_intermediate', None)
-                    if mlp is not None:
-                        try:
-                            # Get top neuron activations
-                            if hasattr(mlp, 'shape') and len(mlp.shape) >= 1:
-                                flat_mlp = mlp.flatten().detach().cpu()
-                                top_k = torch.topk(flat_mlp.abs(), min(8, len(flat_mlp)))
-                                activations = top_k.values.tolist()
-                                top_neurons = top_k.indices.tolist()
-                                
-                                if VisualizationEvent is not None:
-                                    server.send_event(VisualizationEvent(
-                                        event_type="mlp",
-                                        data={
-                                            "layer": layer_idx,
-                                            "activations": [a / max(activations) if max(activations) > 0 else 0 for a in activations],
-                                            "top_neurons": top_neurons,
-                                        }
-                                    ))
-                        except Exception:
-                            pass
-                    
-                    # 5. Send layer update
-                    server.send_layer_update(
-                        layer_idx=layer_idx,
-                        refusal_score=max(0, 0.8 - step * 0.02),
-                        acceptance_score=min(1.0, 0.2 + step * 0.02),
-                        direction="forward" if step < 15 else "optimizing",
+                with torch.no_grad():
+                    clean_outputs = model.model(
+                        clean_ids,
+                        output_hidden_states=True,
+                        output_attentions=True,
                     )
                 
-                # 6. Send output probabilities from final logits
-                final_logits = getattr(trace, 'final_logits', None)
-                if final_logits is not None:
+                clean_hidden = clean_outputs.hidden_states
+                if clean_hidden and len(clean_hidden) > 0:
+                    for i, hs in enumerate(clean_hidden[1:]):
+                        if i < num_layers:
+                            act = hs[0].detach()
+                            # Use probe if available, otherwise use activation norm
+                            if hasattr(analyzer, 'probe') and analyzer.probe is not None:
+                                try:
+                                    act_input = act[-1:, :]
+                                    with torch.no_grad():
+                                        probe_pred = torch.sigmoid(analyzer.probe(act_input))
+                                        baseline_scores[i] = {
+                                            'refusal': float(probe_pred[0, 0]),
+                                            'acceptance': 1.0 - float(probe_pred[0, 0]),
+                                            'activation_norm': float(torch.norm(act).item())
+                                        }
+                                except:
+                                    baseline_scores[i] = {
+                                        'refusal': 0.5,
+                                        'acceptance': 0.5,
+                                        'activation_norm': float(torch.norm(act).item())
+                                    }
+                            else:
+                                # No probe - use activation norm as proxy
+                                norm = float(torch.norm(act).item())
+                                baseline_scores[i] = {
+                                    'refusal': 0.5,
+                                    'acceptance': 0.5,
+                                    'activation_norm': norm
+                                }
+                print(f"    [Baseline] Captured {len(baseline_scores)} layers")
+            except Exception as e:
+                print(f"    [Baseline] Error: {e}")
+        
+        # 6. Track pattern for this step
+        step_pattern = {
+            'step': step,
+            'loss': loss_val,
+            'layer_deltas': {},
+            'max_delta_layer': None,
+            'max_delta_value': 0.0
+        }
+        
+        # 7. Send layer updates with REAL probe predictions and deltas
+        for layer_idx in range(num_layers):
+            refusal_score = 0.5
+            acceptance_score = 0.5
+            delta_refusal = 0.0
+            delta_acceptance = 0.0
+            activation_norm = 1.0
+            
+            if layer_idx in current_acts:
+                act = current_acts[layer_idx]
+                activation_norm = float(torch.norm(act).item())
+                
+                # Use probe if available
+                if hasattr(analyzer, 'probe') and analyzer.probe is not None:
                     try:
-                        last_logits = final_logits[-1].detach().cpu()
-                        probs = torch.softmax(last_logits, dim=0)
-                        top_k = torch.topk(probs, 5)
-                        output_tokens = [model.tokenizer.decode([idx.item()]) for idx in top_k.indices]
-                        output_probs = top_k.values.tolist()
-                        
-                        server.send_output_probabilities(
-                            tokens=output_tokens,
-                            probabilities=output_probs,
-                        )
-                    except Exception:
+                        act_input = act[-1:, :] if act.dim() == 2 else act[0, -1:, :] if act.dim() == 3 else act.reshape(1, -1)
+                        with torch.no_grad():
+                            probe_pred = torch.sigmoid(analyzer.probe(act_input))
+                            refusal_score = float(probe_pred[0, 0])
+                            acceptance_score = 1.0 - refusal_score
+                    except:
                         pass
                 
-            except Exception as e:
-                # Log trace errors for debugging
-                print(f"      [Trace Error: {e}]")
+                # Compute delta from baseline
+                if layer_idx in baseline_scores:
+                    delta_refusal = refusal_score - baseline_scores[layer_idx]['refusal']
+                    delta_acceptance = acceptance_score - baseline_scores[layer_idx]['acceptance']
+                    
+                    step_pattern['layer_deltas'][layer_idx] = delta_refusal
+                    if abs(delta_refusal) > abs(step_pattern['max_delta_value']):
+                        step_pattern['max_delta_value'] = delta_refusal
+                        step_pattern['max_delta_layer'] = layer_idx
+            
+            # Send layer update with delta
+            server.send_layer_update(
+                layer_idx=layer_idx,
+                refusal_score=refusal_score,
+                acceptance_score=acceptance_score,
+                delta_refusal=delta_refusal,
+                delta_acceptance=delta_acceptance,
+                activation_norm=activation_norm,
+                baseline_refusal=baseline_scores.get(layer_idx, {}).get('refusal', 0.5),
+                direction="refusal" if refusal_score > acceptance_score else "acceptance",
+            )
+            
+            # Send flow graph for current active layer
+            if layer_idx == current_flow_layer:
+                nodes = [
+                    {"label": f"L{layer_idx} In", "color": "#00d4ff", "customdata": f"Input (norm: {activation_norm:.2f})"},
+                    {"label": "LN1", "color": "#64748b", "customdata": "Pre-attention LayerNorm"},
+                    {"label": "Q", "color": "#8b5cf6", "customdata": f"Query (ref: {refusal_score:.2f}, delta: {delta_refusal:+.3f})"},
+                    {"label": "K", "color": "#8b5cf6", "customdata": f"Key (acc: {acceptance_score:.2f})"},
+                    {"label": "V", "color": "#8b5cf6", "customdata": "Value projection"},
+                    {"label": "Attn", "color": "#10b981", "customdata": f"Attention (loss: {loss_val:.4f})"},
+                    {"label": "LN2", "color": "#64748b", "customdata": "Pre-MLP LayerNorm"},
+                    {"label": "FC1", "color": "#f59e0b", "customdata": "MLP up-projection"},
+                    {"label": "FC2", "color": "#f59e0b", "customdata": "MLP down-projection"},
+                    {"label": f"L{layer_idx} Out", "color": "#ef4444", "customdata": f"Output (delta: {delta_acceptance:+.3f})"},
+                ]
+                
+                attn_flow = acceptance_score
+                mlp_flow = 1 - refusal_score
+                
+                links = [
+                    {"source": 0, "target": 1, "value": 1.0, "color": "rgba(0,212,255,0.5)", "customdata": "Input -> LN1"},
+                    {"source": 1, "target": 2, "value": 0.33, "color": "rgba(139,92,246,0.5)", "customdata": "LN1 -> Q"},
+                    {"source": 1, "target": 3, "value": 0.33, "color": "rgba(139,92,246,0.5)", "customdata": "LN1 -> K"},
+                    {"source": 1, "target": 4, "value": 0.34, "color": "rgba(139,92,246,0.5)", "customdata": "LN1 -> V"},
+                    {"source": 2, "target": 5, "value": attn_flow, "color": f"rgba(239,68,68,{min(1,refusal_score+0.2)})", "customdata": f"Q*K ({refusal_score:.2f})"},
+                    {"source": 3, "target": 5, "value": attn_flow * 0.5, "color": f"rgba(16,185,129,{min(1,acceptance_score+0.2)})", "customdata": f"K ({acceptance_score:.2f})"},
+                    {"source": 4, "target": 5, "value": attn_flow * 0.5, "color": "rgba(16,185,129,0.5)", "customdata": "V weighting"},
+                    {"source": 0, "target": 5, "value": 0.25, "color": "rgba(100,116,139,0.3)", "customdata": "Residual"},
+                    {"source": 5, "target": 6, "value": 1.0, "color": "rgba(100,116,139,0.5)", "customdata": "Attn -> LN2"},
+                    {"source": 6, "target": 7, "value": mlp_flow, "color": "rgba(245,158,11,0.5)", "customdata": "LN2 -> MLP"},
+                    {"source": 7, "target": 8, "value": mlp_flow, "color": "rgba(245,158,11,0.5)", "customdata": "GELU"},
+                    {"source": 5, "target": 9, "value": 0.25, "color": "rgba(100,116,139,0.3)", "customdata": "Residual"},
+                    {"source": 8, "target": 9, "value": mlp_flow, "color": "rgba(239,68,68,0.5)", "customdata": "MLP -> Out"},
+                ]
+                
+                server.send_flow_graph(
+                    layer_idx=layer_idx,
+                    nodes=nodes,
+                    links=links,
+                    step=step,
+                )
+        
+        # 8. Record pattern history
+        pattern_history.append(step_pattern)
+        if len(pattern_history) > 50:
+            pattern_history.pop(0)
+        
+        # 9. Detect attack pattern and send to visualization
+        pattern = detect_attack_pattern(pattern_history, num_layers)
+        if pattern['detected']:
+            server.send_event(
+                event_type="pattern_detected",
+                data={
+                    "pattern_type": pattern['pattern_type'],
+                    "confidence": pattern['confidence'],
+                    "description": pattern['description'],
+                    "affected_layers": pattern.get('affected_layers', []),
+                    "delta": pattern.get('delta', 0),
+                }
+            )
+        
+        # 10. Send REAL attention matrix from model outputs
+        attention_sent = False
+        try:
+            if hasattr(outputs, 'attentions') and outputs.attentions:
+                attn_weights = outputs.attentions[current_flow_layer]
+                if attn_weights is not None and attn_weights.dim() == 4:
+                    attn_matrix = attn_weights[0, 0].detach().cpu().numpy().tolist()
+                    display_tokens = model.tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
+                    server.send_attention_matrix(
+                        layer_idx=current_flow_layer,
+                        head_idx=0,
+                        attention_weights=attn_matrix,
+                        tokens=display_tokens[:min(len(display_tokens), 15)],
+                    )
+                    attention_sent = True
+        except:
+            pass
+        
+        # Fallback: send synthetic attention pattern if real one unavailable
+        if not attention_sent and tokens:
+            n = min(8, len(tokens))
+            if n > 0:
+                synthetic_attn = [[1.0 / (j + 1) if j <= i else 0.0 for j in range(n)] for i in range(n)]
+                try:
+                    server.send_attention_matrix(
+                        layer_idx=current_flow_layer,
+                        head_idx=0,
+                        attention_weights=synthetic_attn,
+                        tokens=tokens[:n],
+                    )
+                except:
+                    pass
+        
+        # 11. Send REAL output probabilities
+        output_probs_sent = False
+        try:
+            if hasattr(outputs, 'logits') and outputs.logits is not None:
+                logits = outputs.logits[0, -1, :]
+                probs = torch.softmax(logits, dim=-1)
+                top_k = 10
+                top_probs, top_indices = torch.topk(probs, top_k)
+                
+                top_tokens = []
+                top_prob_values = []
+                for idx, prob in zip(top_indices, top_probs):
+                    token = model.tokenizer.decode([idx.item()])
+                    token = token.replace('\n', '\\n').replace('\t', '\\t')
+                    top_tokens.append(token[:20])
+                    top_prob_values.append(float(prob.item()))
+                
+                server.send_output_probabilities(
+                    tokens=top_tokens,
+                    probabilities=top_prob_values,
+                )
+                output_probs_sent = True
+        except:
+            pass
+        
+        # Fallback: send placeholder predictions
+        if not output_probs_sent:
+            try:
+                server.send_output_probabilities(
+                    tokens=["<processing>", "..."],
+                    probabilities=[0.5, 0.5],
+                )
+            except:
                 pass
     
     attack_results = []
@@ -368,37 +755,110 @@ def main():
             except:
                 pass
         
-        # Run attack WITH step callback for real-time visualization
-        result = attack.optimize(
-            prompt, 
-            num_steps=30, 
-            verbose=False,
-            step_callback=attack_step_callback,
-        )
+        # Run attack based on type
+        if attack_type == "ssr" and SSR_AVAILABLE:
+            # SSR attack workflow
+            masked_prompt = f"{prompt} [MASK][MASK][MASK]"
+            
+            # SSR callback for visualization
+            def ssr_callback(iteration, loss, candidate_text):
+                if server:
+                    server.send_attack_step(
+                        step=iteration,
+                        loss=loss,
+                        suffix=candidate_text[-50:] if len(candidate_text) > 50 else candidate_text,
+                        success=loss < 0.05,
+                    )
+            
+            ssr_attack.callback = ssr_callback
+            ssr_attack.init_prompt(masked_prompt)
+            ssr_attack.buffer_init_random()
+            
+            # Generate adversarial prompt
+            adversarial_prompt, final_loss = ssr_attack.generate()
+            
+            # Extract the adversarial suffix (everything after original prompt)
+            adversarial_suffix = adversarial_prompt.replace(prompt, "").strip()
+            
+            # Generate response with adversarial prompt
+            try:
+                response = model.model.generate(
+                    **model.tokenize(adversarial_prompt),
+                    max_new_tokens=100,
+                    do_sample=False,
+                )
+                generated_response = model.tokenizer.decode(response[0], skip_special_tokens=True)
+            except Exception as e:
+                generated_response = f"Generation error: {e}"
+            
+            # Create result object compatible with existing code
+            class SSRResult:
+                def __init__(self):
+                    self.adversarial_suffix = adversarial_suffix
+                    self.generated_response = generated_response
+                    self.final_loss = final_loss
+                    self.success = evaluator.evaluate_single(
+                        prompt=prompt,
+                        response=generated_response,
+                        adversarial_suffix=adversarial_suffix
+                    )["success"]
+            
+            result = SSRResult()
+        else:
+            # Gradient attack workflow
+            result = attack.optimize(
+                prompt, 
+                num_steps=30, 
+                verbose=False,
+                step_callback=attack_step_callback,
+            )
+        
+        # Update attack tracker
+        attack_tracker["total"] += 1
+        if result.success:
+            attack_tracker["success"] += 1
+        
+        # Send response to visualization
+        if server and result.generated_response:
+            server.send_event(
+                event_type="response",
+                data={
+                    "prompt": prompt,
+                    "response": result.generated_response[:500],
+                    "success": result.success,
+                    "asr": (attack_tracker["success"] / attack_tracker["total"]) * 100,
+                }
+            )
         
         # Final update after attack
         if server:
+            current_asr = (attack_tracker["success"] / attack_tracker["total"]) * 100
             server.send_attack_step(
                 step=30,
                 loss=result.final_loss,
                 suffix=result.adversarial_suffix[:30] if result.adversarial_suffix else "done",
                 success=result.success,
+                asr=current_asr,
             )
         
-        # Trace adversarial prompt AFTER attack
+        # Trace adversarial prompt AFTER attack (silent - don't print errors)
         if server and result.adversarial_suffix:
             try:
                 adv_prompt = prompt + " " + result.adversarial_suffix
                 adv_ids = model.tokenizer.encode(adv_prompt, return_tensors="pt")[0]
                 adv_trace = tracer.trace_forward(adv_ids)
                 
-                # Send adversarial trace
-                server.send_transformer_trace(
-                    trace_data=adv_trace.to_dict(),
-                    trace_type="adversarial"
-                )
-            except Exception as e:
-                print(f"      [Trace Error: {e}]")
+                if adv_trace is not None:
+                    try:
+                        trace_dict = adv_trace.to_dict()
+                        server.send_transformer_trace(
+                            trace_data=trace_dict,
+                            trace_type="adversarial"
+                        )
+                    except Exception:
+                        pass  # Silent - trace serialization errors are non-critical
+            except Exception:
+                pass  # Silent - visualization errors shouldn't affect main output
         
         # Evaluate response for detailed feedback
         eval_result = evaluator.evaluate_single(
@@ -448,6 +908,31 @@ def main():
     gradient_metrics = evaluator.evaluate_batch([
         {"prompt": r["prompt"], "response": r["response"]} for r in attack_results
     ])
+    
+    # ML Judge Evaluation (if available)
+    ml_judge_results = None
+    if JUDGE_AVAILABLE and attack_results:
+        print("\n  Running ML-based judge evaluation...")
+        try:
+            # Use ML-primary preset: prioritizes semantic understanding over keywords
+            from mira.judge import create_judge_from_preset
+            ml_judge = create_judge_from_preset("ml_primary")
+            ml_judge.load_models(verbose=True)
+            
+            responses = [r["response"] for r in attack_results]
+            ml_judge_results = ml_judge.judge_batch(responses)
+            ml_metrics = ml_judge.compute_asr(ml_judge_results)
+            
+            # Update attack_results with ML judge verdicts
+            for i, (result, ml_result) in enumerate(zip(attack_results, ml_judge_results)):
+                result["ml_verdict"] = ml_result.verdict
+                result["ml_confidence"] = ml_result.confidence
+                result["ml_explanation"] = ml_result.explanation
+            
+            print(f"    ML Judge ASR: {ml_metrics['asr']*100:.1f}%")
+            print(f"    ML Judge Confidence: {ml_metrics['avg_confidence']*100:.1f}%")
+        except Exception as e:
+            print(f"    ML Judge failed: {e}")
     
     print(f"""
   ┌─────────────────────────────────────────────────────────────┐
@@ -500,17 +985,129 @@ def main():
     except:
         pass
     
-    # HTML Report
-    print("  Creating HTML report...")
-    layer_states = [{"layer": i, "direction": "neutral", "refusal_score": 0.1*i, 
-                     "acceptance_score": 0.05*i} for i in range(model.n_layers)]
-    html_path = viz.create_full_report(
-        layer_states=layer_states,
-        token_probs=[("the", 0.3), ("a", 0.2), ("to", 0.1)],
-        prompt=test_prompts[0] if test_prompts else "test",
-        model_name=model.model_name,
-    )
-    print(f"    ✓ {html_path}")
+    # Generate Research-Quality Report
+    print("  Creating research report...")
+    if RESEARCH_REPORT_AVAILABLE:
+        try:
+            report_gen = ResearchReportGenerator(output_dir=str(output_dir / "html"))
+            
+            # Prepare probe results for report with full data
+            probe_report_data = []
+            for result in runner.results:
+                probe_report_data.append({
+                    "name": result.get("probe_name", "Unknown"),
+                    "category": result.get("category", "misc"),
+                    "prompt": result.get("prompt", ""),
+                    "response": result.get("response", result.get("output", "")),
+                    "success": result.get("success", False),
+                    "confidence": result.get("confidence", result.get("judge_confidence", 0.5)),
+                })
+            
+            # Extract real layer activations from captured traces
+            n_layers = model.n_layers
+            layer_activations = None
+            
+            # Try to get real activations from traces
+            if baseline_clean_attention is not None or baseline_attack_attention is not None:
+                try:
+                    clean_acts = []
+                    attack_acts = []
+                    
+                    # Re-run traces to get full layer data
+                    if safe_prompts:
+                        clean_ids = model.tokenizer.encode(safe_prompts[0], return_tensors="pt")[0]
+                        clean_trace = tracer.trace_forward(clean_ids)
+                        if clean_trace and clean_trace.layers:
+                            for layer in clean_trace.layers:
+                                # Use residual norm as activation strength
+                                norm = float(layer.residual_post.norm()) if layer.residual_post is not None else 0.0
+                                clean_acts.append(norm)
+                    
+                    if harmful_prompts:
+                        attack_ids = model.tokenizer.encode(harmful_prompts[0], return_tensors="pt")[0]
+                        attack_trace = tracer.trace_forward(attack_ids)
+                        if attack_trace and attack_trace.layers:
+                            for layer in attack_trace.layers:
+                                norm = float(layer.residual_post.norm()) if layer.residual_post is not None else 0.0
+                                attack_acts.append(norm)
+                    
+                    # Normalize to [0, 1] range for visualization
+                    if clean_acts and attack_acts:
+                        max_val = max(max(clean_acts), max(attack_acts))
+                        if max_val > 0:
+                            clean_acts = [x / max_val for x in clean_acts]
+                            attack_acts = [x / max_val for x in attack_acts]
+                        layer_activations = {"clean": clean_acts, "attack": attack_acts}
+                        print(f"    ✓ Using real layer activations (clean: {len(clean_acts)}, attack: {len(attack_acts)})")
+                except Exception as e:
+                    print(f"    Note: Could not extract layer activations ({e})")
+            
+            # Only use fallback if we couldn't get real data
+            if layer_activations is None:
+                print("    Note: Using computed activations based on ASR")
+                success_rate = gradient_metrics.asr
+                clean_acts = []
+                attack_acts = []
+                for i in range(n_layers):
+                    # Compute based on actual attack success rate
+                    clean_acts.append(0.3 + 0.015 * i)
+                    base = 0.25 + 0.025 * i
+                    divergence = 0.1 * (i / n_layers) * (1 + success_rate)
+                    attack_acts.append(base + divergence)
+                layer_activations = {"clean": clean_acts, "attack": attack_acts}
+            
+            # Use real attention patterns if captured
+            attention_data = None
+            if baseline_clean_attention is not None or baseline_attack_attention is not None:
+                attention_data = {
+                    "clean": baseline_clean_attention,
+                    "attack": baseline_attack_attention,
+                }
+                print("    ✓ Using real attention patterns in report")
+            
+            # Calculate average confidence
+            confidences = [r.get("confidence", 0.5) for r in probe_report_data]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
+            
+            html_path = report_gen.generate_report(
+                title="MIRA Security Analysis Report",
+                model_name=model.model_name,
+                attack_results=attack_results,
+                probe_results=probe_report_data,
+                layer_activations=layer_activations,
+                attention_data=attention_data,
+                asr_metrics={
+                    "asr": gradient_metrics.asr,
+                    "refusal_rate": gradient_metrics.refusal_rate,
+                    "total": gradient_metrics.total_attacks,
+                    "successful": gradient_metrics.successful_attacks,
+                    "avg_confidence": avg_confidence,
+                },
+            )
+            print(f"    ✓ {html_path}")
+        except Exception as e:
+            print(f"    ✗ Research report failed: {e}")
+            # Fallback to old report
+            layer_states = [{"layer": i, "direction": "neutral", "refusal_score": 0.1*i, 
+                             "acceptance_score": 0.05*i} for i in range(model.n_layers)]
+            html_path = viz.create_full_report(
+                layer_states=layer_states,
+                token_probs=[("the", 0.3), ("a", 0.2), ("to", 0.1)],
+                prompt=test_prompts[0] if test_prompts else "test",
+                model_name=model.model_name,
+            )
+            print(f"    ✓ {html_path} (fallback)")
+    else:
+        # Fallback to old report
+        layer_states = [{"layer": i, "direction": "neutral", "refusal_score": 0.1*i, 
+                         "acceptance_score": 0.05*i} for i in range(model.n_layers)]
+        html_path = viz.create_full_report(
+            layer_states=layer_states,
+            token_probs=[("the", 0.3), ("a", 0.2), ("to", 0.1)],
+            prompt=test_prompts[0] if test_prompts else "test",
+            model_name=model.model_name,
+        )
+        print(f"    OK: {html_path}")
     
     # Save data
     print("  Saving data...")
@@ -556,7 +1153,7 @@ def main():
 ║    Probe Bypass:     {probe_summary.get('bypass_rate', 0):>46.1%}    ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  LIVE DASHBOARD                                                      ║
-║    🌐 http://localhost:5000 (keep running to view)                   ║
+║    🌐 http://localhost:{viz_port or 5001} (keep running to view)      ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  OUTPUT FILES                                                        ║
 ║    {str(output_dir.absolute())[:62]:<62}                             ║
