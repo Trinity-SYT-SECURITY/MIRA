@@ -1369,8 +1369,14 @@ def get_flow_graph_html() -> str:
         // Toggle panel collapse
         function togglePanel(toggle) {
             toggle.classList.toggle('collapsed');
-            const content = toggle.parentElement.nextElementSibling;
-            content.classList.toggle('collapsed');
+            // Find the panel-content sibling more reliably
+            const panel = toggle.closest('.panel');
+            if (panel) {
+                const content = panel.querySelector('.panel-content');
+                if (content) {
+                    content.classList.toggle('collapsed');
+                }
+            }
         }
 
         // Initialize multi-head selector
