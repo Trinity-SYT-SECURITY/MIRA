@@ -185,6 +185,8 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     charts_dir = output_dir / "charts"
     charts_dir.mkdir(exist_ok=True)
+    conversations_dir = output_dir / "conversations"
+    conversations_dir.mkdir(exist_ok=True)
     
     print(f"  Output:     {output_dir.absolute()}")
     print(f"  Model:      {model_name}")
@@ -950,6 +952,7 @@ def main():
             "loss": result.final_loss,
             "eval_category": eval_result['category'],
             "has_refusal": eval_result['has_refusal_markers'],
+            "adversarial_suffix": result.adversarial_suffix or "",
         })
         
         logger.log_attack(
@@ -961,6 +964,48 @@ def main():
             success=result.success,
             metrics={"loss": result.final_loss},
         )
+        
+        # Save conversation to log file
+        conversation_entry = {
+            "id": i + 1,
+            "timestamp": datetime.now().isoformat(),
+            "original_prompt": prompt,
+            "adversarial_suffix": result.adversarial_suffix or "",
+            "full_attack_prompt": prompt + " " + (result.adversarial_suffix or ""),
+            "model_response": result.generated_response or "",
+            "attack_success": result.success,
+            "final_loss": result.final_loss,
+            "evaluation": {
+                "category": eval_result['category'],
+                "has_refusal_markers": eval_result['has_refusal_markers'],
+            }
+        }
+        
+        # Append to JSON log
+        conversations_log_file = conversations_dir / "attack_conversations.json"
+        existing_conversations = []
+        if conversations_log_file.exists():
+            try:
+                with open(conversations_log_file, "r") as f:
+                    existing_conversations = json.load(f)
+            except:
+                existing_conversations = []
+        existing_conversations.append(conversation_entry)
+        with open(conversations_log_file, "w") as f:
+            json.dump(existing_conversations, f, indent=2, ensure_ascii=False)
+        
+        # Also append to readable Markdown log
+        markdown_log_file = conversations_dir / "attack_log.md"
+        status_emoji = "✅" if result.success else "❌"
+        with open(markdown_log_file, "a") as f:
+            f.write(f"\n## Attack #{i+1} {status_emoji}\n\n")
+            f.write(f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"**Original Prompt:**\n```\n{prompt}\n```\n\n")
+            if result.adversarial_suffix:
+                f.write(f"**Adversarial Suffix:**\n```\n{result.adversarial_suffix}\n```\n\n")
+            f.write(f"**Model Response:**\n```\n{result.generated_response or '(No response)'}\n```\n\n")
+            f.write(f"**Result:** {'SUCCESS' if result.success else 'FAILED'} | Loss: {result.final_loss:.4f}\n\n")
+            f.write(f"---\n")
     
     gradient_metrics = evaluator.evaluate_batch([
         {"prompt": r["prompt"], "response": r["response"]} for r in attack_results
