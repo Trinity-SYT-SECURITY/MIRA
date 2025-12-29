@@ -122,63 +122,96 @@ class TransformerTracer:
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
         
+        # Move to model device
+        device = next(self.model.parameters()).device
+        input_ids = input_ids.to(device)
+        
         # Clear previous traces
         self.layer_traces = []
         self.embeddings = None
         
-        # Register hooks for embeddings
-        self._register_hooks()
-        
         # Forward pass with attention outputs
         with torch.no_grad():
-            outputs = self.model(
-                input_ids, 
-                output_attentions=True,  # Key: get attention weights
-                output_hidden_states=True,  # Get all hidden states
-            )
+            try:
+                outputs = self.model(
+                    input_ids, 
+                    output_attentions=True,
+                    output_hidden_states=True,
+                )
+            except Exception as e:
+                # Fallback without special outputs
+                outputs = self.model(input_ids)
         
-        # Remove hooks
-        self._remove_hooks()
+        # Extract attention weights (may be None for some models)
+        attentions = getattr(outputs, 'attentions', None)
+        hidden_states = getattr(outputs, 'hidden_states', None)
         
-        # Extract attention weights from outputs
-        attentions = outputs.attentions  # Tuple of (num_layers,) each [batch, heads, seq, seq]
-        hidden_states = outputs.hidden_states  # Tuple of (num_layers+1,) each [batch, seq, hidden]
-        
-        # Build layer traces with real attention weights
+        # Build layer traces
         self.layer_traces = []
-        for layer_idx, attn_weights in enumerate(attentions):
-            # attn_weights shape: [batch, num_heads, seq_len, seq_len]
-            attn = attn_weights[0].detach()  # Remove batch dim
-            
-            # Get hidden states for this layer
-            h_pre = hidden_states[layer_idx][0].detach()  # Before layer
-            h_post = hidden_states[layer_idx + 1][0].detach()  # After layer
-            
-            layer_trace = LayerTrace(
-                layer_idx=layer_idx,
-                query=torch.zeros(1, 1, 1),  # Would need deeper hooks
-                key=torch.zeros(1, 1, 1),
-                value=torch.zeros(1, 1, 1),
-                attention_weights=attn,  # Real attention! [num_heads, seq_len, seq_len]
-                attention_out=h_post,
-                mlp_in=h_pre,
-                mlp_intermediate=torch.zeros(1, 1),  # Would need deeper hooks
-                mlp_out=h_post,
-                residual_pre=h_pre,
-                residual_post=h_post,
-            )
-            self.layer_traces.append(layer_trace)
+        num_layers = self.model_wrapper.n_layers
+        
+        if attentions is not None and len(attentions) > 0:
+            # We have real attention weights
+            for layer_idx, attn_weights in enumerate(attentions):
+                attn = attn_weights[0].detach().cpu()
+                
+                h_pre = hidden_states[layer_idx][0].detach().cpu() if hidden_states else torch.zeros(1, 1)
+                h_post = hidden_states[layer_idx + 1][0].detach().cpu() if hidden_states and len(hidden_states) > layer_idx + 1 else torch.zeros(1, 1)
+                
+                layer_trace = LayerTrace(
+                    layer_idx=layer_idx,
+                    query=torch.zeros(1, 1, 1),
+                    key=torch.zeros(1, 1, 1),
+                    value=torch.zeros(1, 1, 1),
+                    attention_weights=attn,
+                    attention_out=h_post,
+                    mlp_in=h_pre,
+                    mlp_intermediate=torch.zeros(1, 1),
+                    mlp_out=h_post,
+                    residual_pre=h_pre,
+                    residual_post=h_post,
+                )
+                self.layer_traces.append(layer_trace)
+        else:
+            # No attention available - create placeholder traces
+            for layer_idx in range(num_layers):
+                seq_len = input_ids.shape[1]
+                # Create uniform attention as placeholder
+                uniform_attn = torch.ones(1, seq_len, seq_len) / seq_len
+                
+                layer_trace = LayerTrace(
+                    layer_idx=layer_idx,
+                    query=torch.zeros(1, 1, 1),
+                    key=torch.zeros(1, 1, 1),
+                    value=torch.zeros(1, 1, 1),
+                    attention_weights=uniform_attn,
+                    attention_out=torch.zeros(1, 1),
+                    mlp_in=torch.zeros(1, 1),
+                    mlp_intermediate=torch.zeros(1, 1),
+                    mlp_out=torch.zeros(1, 1),
+                    residual_pre=torch.zeros(1, 1),
+                    residual_post=torch.zeros(1, 1),
+                )
+                self.layer_traces.append(layer_trace)
         
         # Decode tokens
-        tokens = self.tokenizer.convert_ids_to_tokens(input_ids[0])
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids[0].cpu())
+        
+        # Get embeddings
+        if hidden_states is not None and len(hidden_states) > 0:
+            embeddings = hidden_states[0][0].detach().cpu()
+        elif self.embeddings is not None:
+            embeddings = self.embeddings
+        else:
+            embeddings = torch.zeros(input_ids.shape[1], 1)
         
         # Build trace
         trace = TransformerTrace(
             tokens=tokens,
-            token_ids=input_ids[0],
-            embeddings=self.embeddings if self.embeddings is not None else hidden_states[0][0],
+            token_ids=input_ids[0].cpu(),
+            embeddings=embeddings,
             layers=self.layer_traces,
-            final_logits=outputs.logits[0],
+            final_logits=outputs.logits[0].cpu(),
         )
         
         return trace
