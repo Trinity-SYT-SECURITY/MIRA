@@ -223,38 +223,14 @@ def main():
     for i, prompt in enumerate(test_prompts):
         print(f"\n  [{i+1}/{len(test_prompts)}] {prompt[:45]}...")
         
-        # Trace normal prompt BEFORE attack
+        # Skip transformer tracing for now - focus on attack visualization
+        # Will re-enable after fixing trace issues
         if server:
-            try:
-                normal_ids = model.tokenizer.encode(prompt, return_tensors="pt")[0]
-                normal_trace = tracer.trace_forward(normal_ids)
-                
-                # Send embeddings to dashboard
-                server.send_embeddings(
-                    tokens=normal_trace.tokens,
-                    embeddings=normal_trace.embeddings.detach().cpu().numpy().tolist()
-                )
-                
-                # Send transformer trace
-                server.send_transformer_trace(
-                    trace_data=normal_trace.to_dict(),
-                    trace_type="normal"
-                )
-                
-                # Send attention matrices for each layer/head
-                for layer in normal_trace.layers:
-                    attn_weights = layer.attention_weights  # [num_heads, seq, seq]
-                    if attn_weights is not None and attn_weights.numel() > 1:
-                        num_heads = attn_weights.shape[0]
-                        for head_idx in range(num_heads):
-                            server.send_attention_matrix(
-                                layer_idx=layer.layer_idx,
-                                head_idx=head_idx,
-                                attention_weights=attn_weights[head_idx].cpu().numpy().tolist(),
-                                tokens=normal_trace.tokens
-                            )
-            except Exception as e:
-                print(f"      [Trace Error: {e}]")
+            # Just log that we're starting the attack
+            server.send_layer_update(layer=0, refusal_score=0.0, acceptance_score=0.0)
+        
+        # Note: Trace Error was happening here - disabled temporarily
+        # TODO: Fix TransformerTracer to_dict() serialization
         
         # Send initial attack state to live viz
         if server:

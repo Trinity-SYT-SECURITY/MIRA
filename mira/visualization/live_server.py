@@ -304,17 +304,13 @@ class LiveVisualizationServer:
         event_queue.put(event)
 
 
-# Import enhanced dashboard with attention visualization
+# Import dashboard - use simple reliable version
 try:
-    from mira.visualization.attention_viz import get_attention_viz_html
-    DASHBOARD_HTML = get_attention_viz_html()
+    from mira.visualization.simple_dashboard import get_simple_dashboard
+    DASHBOARD_HTML = get_simple_dashboard()
 except ImportError:
-    try:
-        from mira.visualization.enhanced_dashboard import get_enhanced_dashboard
-        DASHBOARD_HTML = get_enhanced_dashboard()
-    except ImportError:
-        # Fallback to inline HTML if import fails
-        DASHBOARD_HTML = '''
+    # Fallback to inline HTML if import fails
+    DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
