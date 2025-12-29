@@ -259,22 +259,24 @@ def main():
                     server.send_embeddings(tokens=tokens, embeddings=[])
                 
                 # 2. Send Q/K/V event for each layer (first 3 layers for performance)
-                for layer_idx in range(min(3, len(trace.layers))):
-                    layer_trace = trace.layers[layer_idx]
+                layers = trace.layers if trace.layers is not None else []
+                for layer_idx in range(min(3, len(layers))):
+                    layer_trace = layers[layer_idx]
                     if layer_trace is None:
                         continue
                     
                     # Send QKV event
-                    server.send_event(VisualizationEvent(
-                        event_type="qkv",
-                        data={
-                            "layer": layer_idx,
-                            "tokens": tokens[:6],
-                            "query_vectors": [0.5 + (step % 5) * 0.1] * len(tokens[:6]),
-                            "key_vectors": [0.4 + (step % 5) * 0.08] * len(tokens[:6]),
-                            "value_vectors": [0.6 + (step % 5) * 0.05] * len(tokens[:6]),
-                        }
-                    ))
+                    if VisualizationEvent is not None:
+                        server.send_event(VisualizationEvent(
+                            event_type="qkv",
+                            data={
+                                "layer": layer_idx,
+                                "tokens": tokens[:6],
+                                "query_vectors": [0.5 + (step % 5) * 0.1] * len(tokens[:6]),
+                                "key_vectors": [0.4 + (step % 5) * 0.08] * len(tokens[:6]),
+                                "value_vectors": [0.6 + (step % 5) * 0.05] * len(tokens[:6]),
+                            }
+                        ))
                     
                     # 3. Send attention matrix
                     attn = getattr(layer_trace, 'attention_weights', None)
@@ -309,14 +311,15 @@ def main():
                                 activations = top_k.values.tolist()
                                 top_neurons = top_k.indices.tolist()
                                 
-                                server.send_event(VisualizationEvent(
-                                    event_type="mlp",
-                                    data={
-                                        "layer": layer_idx,
-                                        "activations": [a / max(activations) if max(activations) > 0 else 0 for a in activations],
-                                        "top_neurons": top_neurons,
-                                    }
-                                ))
+                                if VisualizationEvent is not None:
+                                    server.send_event(VisualizationEvent(
+                                        event_type="mlp",
+                                        data={
+                                            "layer": layer_idx,
+                                            "activations": [a / max(activations) if max(activations) > 0 else 0 for a in activations],
+                                            "top_neurons": top_neurons,
+                                        }
+                                    ))
                         except Exception:
                             pass
                     
@@ -329,9 +332,10 @@ def main():
                     )
                 
                 # 6. Send output probabilities from final logits
-                if trace.final_logits is not None:
+                final_logits = getattr(trace, 'final_logits', None)
+                if final_logits is not None:
                     try:
-                        last_logits = trace.final_logits[-1].detach().cpu()
+                        last_logits = final_logits[-1].detach().cpu()
                         probs = torch.softmax(last_logits, dim=0)
                         top_k = torch.topk(probs, 5)
                         output_tokens = [model.tokenizer.decode([idx.item()]) for idx in top_k.indices]
