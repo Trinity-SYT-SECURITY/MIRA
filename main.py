@@ -129,6 +129,50 @@ def main():
         # Interactive selection based on system capabilities
         model_name = select_model_interactive()
     
+    # Attack count selection for fair comparison
+    env_attack_count = os.getenv("ATTACK_COUNT")
+    if env_attack_count:
+        num_attacks = int(env_attack_count)
+        print(f"\n  📌 Using attack count from .env: {num_attacks}\n")
+    else:
+        print("""
+============================================================
+  ATTACK COUNT SELECTION
+============================================================
+
+  How many attack attempts per prompt?
+  (For fair comparison, use same count across experiments)
+
+  [1] 5 attacks   (Quick test)
+  [2] 10 attacks  (Standard)
+  [3] 20 attacks  (Thorough)
+  [4] 50 attacks  (Comprehensive)
+  [5] Custom number
+
+============================================================
+  Enter number (1-5) or press Enter for default
+============================================================
+""")
+        try:
+            choice = input("  Your choice: ").strip()
+            if choice == "" or choice == "2":
+                num_attacks = 10
+            elif choice == "1":
+                num_attacks = 5
+            elif choice == "3":
+                num_attacks = 20
+            elif choice == "4":
+                num_attacks = 50
+            elif choice == "5":
+                custom = input("  Enter custom number: ").strip()
+                num_attacks = int(custom) if custom.isdigit() else 10
+            else:
+                num_attacks = 10
+        except:
+            num_attacks = 10
+        
+        print(f"\n  ✓ Selected: {num_attacks} attacks per prompt\n")
+    
     output_base = "./results"
     
     # ================================================================
@@ -324,7 +368,8 @@ def main():
         if use_ssr and not SSR_AVAILABLE:
             print("  Warning: SSR requested but not available, using Gradient attack")
     
-    test_prompts = harmful_prompts[:5]
+    test_prompts = harmful_prompts[:num_attacks]
+    print(f"  Attack prompts: {len(test_prompts)} (user specified: {num_attacks})")
     evaluator = AttackSuccessEvaluator()
     
     # Initialize attack based on type
