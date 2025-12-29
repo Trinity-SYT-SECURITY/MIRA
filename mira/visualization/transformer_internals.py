@@ -735,11 +735,40 @@ TRANSFORMER_INTERNALS_HTML = '''
                 case 'transformer_trace':
                     handleTrace(data.data);
                     break;
+                case 'output_probs':
+                    handleOutputProbs(data.data);
+                    break;
+                case 'residual_predictions':
+                    handleResidualPredictions(data.data);
+                    break;
                 case 'complete':
                     handleComplete(data.data);
                     break;
                 default:
                     log(`Event: ${data.event_type}`, 'info');
+            }
+        }
+        
+        function handleOutputProbs(data) {
+            const probs = data.probs || [];
+            updateOutputProbs(probs);
+        }
+        
+        function handleResidualPredictions(data) {
+            // Log layer predictions for theory-to-practice view
+            const layer = data.layer || 0;
+            const before = data.before_ffn || [];
+            const after = data.after_ffn || [];
+            
+            if (before.length > 0 && after.length > 0) {
+                const beforeTop = before[0]?.token || '?';
+                const afterTop = after[0]?.token || '?';
+                log(`L${layer}: ${beforeTop} → ${afterTop}`, 'info');
+            }
+            
+            // Update output predictions with after_ffn data from the last layer
+            if (after.length > 0) {
+                updateOutputProbs(after);
             }
         }
         
@@ -795,33 +824,40 @@ TRANSFORMER_INTERNALS_HTML = '''
         function handleQKV(data) {
             const n = Math.min(6, (data.tokens || []).length);
             
-            // Query vectors
+            // Query vectors - only show if we have actual data
             const queryEl = document.getElementById('query-vectors');
             queryEl.innerHTML = '';
+            const qData = data.query_vectors || [];
             for (let i = 0; i < n; i++) {
                 const bar = document.createElement('div');
                 bar.className = 'vector-bar query';
-                bar.style.width = `${60 + Math.random() * 40}%`;
+                // Use actual norm if available, otherwise don't show
+                const norm = qData[i] ? Math.min(100, Math.abs(qData[i]) * 100) : 0;
+                bar.style.width = norm > 0 ? `${norm}%` : '5%';
                 queryEl.appendChild(bar);
             }
             
             // Key vectors
             const keyEl = document.getElementById('key-vectors');
             keyEl.innerHTML = '';
+            const kData = data.key_vectors || [];
             for (let i = 0; i < n; i++) {
                 const bar = document.createElement('div');
                 bar.className = 'vector-bar key';
-                bar.style.width = `${60 + Math.random() * 40}%`;
+                const norm = kData[i] ? Math.min(100, Math.abs(kData[i]) * 100) : 0;
+                bar.style.width = norm > 0 ? `${norm}%` : '5%';
                 keyEl.appendChild(bar);
             }
             
             // Value vectors
             const valueEl = document.getElementById('value-vectors');
             valueEl.innerHTML = '';
+            const vData = data.value_vectors || [];
             for (let i = 0; i < n; i++) {
                 const bar = document.createElement('div');
                 bar.className = 'vector-bar value';
-                bar.style.width = `${60 + Math.random() * 40}%`;
+                const norm = vData[i] ? Math.min(100, Math.abs(vData[i]) * 100) : 0;
+                bar.style.width = norm > 0 ? `${norm}%` : '5%';
                 valueEl.appendChild(bar);
             }
             
@@ -920,7 +956,9 @@ TRANSFORMER_INTERNALS_HTML = '''
                 
                 const fill = document.createElement('div');
                 fill.className = 'mlp-bar-fill';
-                fill.style.width = `${30 + Math.random() * 70}%`;
+                // Use actual activation value if available
+                const activation = activations[i] || 0;
+                fill.style.width = activation > 0 ? `${Math.min(100, activation * 100)}%` : '5%';
                 
                 bar.appendChild(fill);
                 row.appendChild(label);
@@ -953,9 +991,6 @@ TRANSFORMER_INTERNALS_HTML = '''
             
             // Trigger flow animation
             animateFlow();
-            
-            // Update output probabilities (simulated)
-            updateOutputProbs();
         }
         
         function handleTrace(data) {
@@ -987,36 +1022,33 @@ TRANSFORMER_INTERNALS_HTML = '''
             log(`Pipeline complete! ASR: ${((data.asr || 0) * 100).toFixed(1)}%`, 'success');
         }
         
-        function updateOutputProbs() {
-            const probs = [
-                { token: 'Sure', prob: Math.random() * 0.4 + 0.3 },
-                { token: 'I', prob: Math.random() * 0.2 + 0.1 },
-                { token: 'Here', prob: Math.random() * 0.15 + 0.05 },
-                { token: 'Sorry', prob: Math.random() * 0.1 },
-                { token: 'The', prob: Math.random() * 0.08 }
-            ].sort((a, b) => b.prob - a.prob);
+        function updateOutputProbs(probs) {
+            // Only update if we have real probability data
+            if (!probs || probs.length === 0) return;
             
             const probsEl = document.getElementById('output-probs');
             probsEl.innerHTML = '';
             
-            probs.forEach(p => {
+            // Show top 5 predictions
+            probs.slice(0, 5).forEach(p => {
                 const row = document.createElement('div');
                 row.className = 'prob-bar-row';
                 
                 const token = document.createElement('div');
                 token.className = 'prob-token';
-                token.textContent = p.token;
+                token.textContent = p.token || p.text || '';
                 
                 const bar = document.createElement('div');
                 bar.className = 'prob-bar';
                 
                 const fill = document.createElement('div');
                 fill.className = 'prob-bar-fill';
-                fill.style.width = `${p.prob * 100}%`;
+                const prob = p.prob || p.probability || 0;
+                fill.style.width = `${prob * 100}%`;
                 
                 const value = document.createElement('div');
                 value.className = 'prob-value';
-                value.textContent = (p.prob * 100).toFixed(1) + '%';
+                value.textContent = (prob * 100).toFixed(1) + '%';
                 
                 bar.appendChild(fill);
                 row.appendChild(token);
@@ -1123,8 +1155,7 @@ TRANSFORMER_INTERNALS_HTML = '''
         // Initialize
         createLayerButtons();
         createHeadButtons();
-        updateOutputProbs();
-        log('Dashboard initialized', 'success');
+        log('Dashboard initialized - waiting for data...', 'success');
     </script>
 </body>
 </html>

@@ -108,11 +108,28 @@ class LiveVisualizationServer:
         self.server_thread = threading.Thread(target=run_server, daemon=True)
         self.server_thread.start()
         
-        print(f"\n  🌐 Live Visualization: http://{self.host}:{self.port}")
+        # Get all accessible IP addresses
+        import socket
+        local_ips = []
+        try:
+            # Get hostname
+            hostname = socket.gethostname()
+            # Get all IP addresses
+            local_ips = socket.gethostbyname_ex(hostname)[2]
+            # Filter out localhost
+            local_ips = [ip for ip in local_ips if not ip.startswith("127.")]
+        except:
+            pass
+        
+        print(f"\n  🌐 Live Visualization Server Started")
+        print(f"  📍 Local:   http://0.0.0.0:{self.port}")
+        if local_ips:
+            for ip in local_ips:
+                print(f"  📍 Network: http://{ip}:{self.port}")
         
         if open_browser:
             time.sleep(0.5)
-            webbrowser.open(f"http://{self.host}:{self.port}")
+            webbrowser.open(f"http://0.0.0.0:{self.port}")
     
     def stop(self):
         """Stop the server."""
@@ -263,6 +280,50 @@ class LiveVisualizationServer:
                 "layer": layer_idx,
                 "residual_norm": residual_norm,
                 "delta_norm": delta_norm,
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
+    def send_residual_predictions(
+        layer_idx: int,
+        predictions_before_ffn: List[tuple],  # [(token, prob), ...]
+        predictions_after_ffn: List[tuple],   # [(token, prob), ...]
+        significant_neurons: List[tuple] = None,  # [(dim, score), ...]
+    ):
+        """
+        Send layer predictions before and after FFN processing.
+        
+        This shows how the model's predictions evolve through the residual stream,
+        and which MLP neurons are most significant at each layer.
+        
+        Args:
+            layer_idx: Layer number
+            predictions_before_ffn: Top token predictions before FFN (intermediate residual)
+            predictions_after_ffn: Top token predictions after FFN (layer residual)
+            significant_neurons: Top MLP neurons with scaled coefficients
+        """
+        event = VisualizationEvent(
+            event_type="residual_predictions",
+            data={
+                "layer": layer_idx,
+                "before_ffn": [{"token": t, "prob": p} for t, p in predictions_before_ffn[:5]],
+                "after_ffn": [{"token": t, "prob": p} for t, p in predictions_after_ffn[:5]],
+                "top_neurons": [{"dim": d, "score": s} for d, s in (significant_neurons or [])[:5]],
+            }
+        )
+        event_queue.put(event)
+    
+    @staticmethod
+    def send_output_probabilities(
+        tokens: List[str],
+        probabilities: List[float],
+    ):
+        """Send output token probabilities."""
+        event = VisualizationEvent(
+            event_type="output_probs",
+            data={
+                "probs": [{"token": t, "prob": p} for t, p in zip(tokens[:10], probabilities[:10])],
             }
         )
         event_queue.put(event)

@@ -144,8 +144,13 @@ def main():
     charts = ResearchChartGenerator(output_dir=str(charts_dir))
     viz = InteractiveViz(output_dir=str(output_dir / "html"))
     
+    # Get HF_CACHE_DIR from environment if specified
+    hf_cache_dir = os.getenv("HF_CACHE_DIR")
+    if hf_cache_dir:
+        print(f"  Cache Dir:  {hf_cache_dir}")
+    
     print("\n  Loading model...", end=" ", flush=True)
-    model = ModelWrapper(model_name, device=env.gpu.backend)
+    model = ModelWrapper(model_name, device=env.gpu.backend, cache_dir=hf_cache_dir)
     print("DONE")
     print(f"  Layers: {model.n_layers}, Vocab: {model.vocab_size}")
     
