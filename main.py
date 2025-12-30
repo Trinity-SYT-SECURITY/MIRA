@@ -271,7 +271,7 @@ def run_complete_multi_model_pipeline():
         print(f"{'='*70}\n")
         
         try:
-            # Run simplified analysis for each model
+            # Run complete analysis for each model
             result = run_single_model_analysis(model_name, num_attacks)
             all_results.append({
                 "model_name": model_name,
@@ -279,8 +279,12 @@ def run_complete_multi_model_pipeline():
                 "asr": result.get("asr", 0.0),
                 "attacks_successful": result.get("successful", 0),
                 "attacks_total": result.get("total", 0),
+                "probe_bypass_rate": result.get("probe_bypass_rate", 0.0),
+                "probes_passed": result.get("probes_passed", 0),
+                "probes_total": result.get("probes_total", 0),
+                "mean_entropy": result.get("mean_entropy", 0.0),
             })
-            print(f"\n  ✓ {model_name}: ASR = {result.get('asr', 0)*100:.1f}%")
+            print(f"\n  ✓ {model_name} complete")
         except Exception as e:
             print(f"\n  ✗ {model_name}: Failed - {e}")
             all_results.append({
@@ -294,88 +298,209 @@ def run_complete_multi_model_pipeline():
     print("  MULTI-MODEL COMPARISON RESULTS")
     print(f"{'='*70}\n")
     
-    print("  Model                          ASR         Attacks")
-    print("  " + "-"*50)
+    print("  Model                          ASR       Probe     Entropy")
+    print("  " + "-"*60)
     
     for r in sorted(all_results, key=lambda x: x.get("asr", 0), reverse=True):
         if r["success"]:
-            print(f"  {r['model_name']:<30} {r['asr']*100:>5.1f}%      {r['attacks_successful']}/{r['attacks_total']}")
+            print(f"  {r['model_name']:<30} {r['asr']*100:>5.1f}%    {r['probe_bypass_rate']*100:>5.1f}%    {r['mean_entropy']:>6.2f}")
         else:
             print(f"  {r['model_name']:<30} {'ERROR':<10} {r.get('error', '')[:20]}")
+    
+    print(f"\n  Legend:")
+    print(f"    ASR = Attack Success Rate (higher = more vulnerable)")
+    print(f"    Probe = Probe Bypass Rate (higher = more vulnerable)")
+    print(f"    Entropy = Mean generation entropy (higher = more uncertain)")
     
     print(f"\n{'='*70}")
     print("  Analysis complete. Individual reports saved to results/")
     print(f"{'='*70}\n")
 
 
-def run_single_model_analysis(model_name: str, num_attacks: int = 5) -> dict:
+def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bool = True) -> dict:
     """
     Run complete analysis on a single model.
-    Returns metrics dictionary.
+    
+    Includes:
+    - Gradient attacks with ASR calculation
+    - Security probe testing
+    - Logit Lens analysis (sample)
+    - Uncertainty tracking
+    - Judge-based evaluation
+    
+    Returns comprehensive metrics dictionary.
     """
     from mira.utils.model_manager import get_model_manager
     from mira.utils.data import load_harmful_prompts
     from mira.attack import GradientAttack
+    from mira.attack.probes import get_security_probes
     from mira.metrics import AttackSuccessEvaluator
-    
-    # Load model
-    manager = get_model_manager()
-    model, tokenizer = manager.load_model(model_name)
-    
-    # Load prompts
-    harmful_prompts = load_harmful_prompts()[:num_attacks]
-    
-    # Create attack
-    attack = GradientAttack(model, tokenizer)
-    evaluator = AttackSuccessEvaluator()
-    
-    # Run attacks
-    successful = 0
-    total = 0
-    
-    for prompt in harmful_prompts:
-        try:
-            result = attack.attack(prompt, max_steps=50)
-            
-            # Check success
-            if result.adversarial_suffix:
-                full_prompt = prompt + " " + result.adversarial_suffix
-                # Generate response
-                input_ids = tokenizer.encode(full_prompt, return_tensors="pt")
-                device = next(model.parameters()).device
-                input_ids = input_ids.to(device)
-                
-                with torch.no_grad():
-                    output = model.generate(
-                        input_ids,
-                        max_new_tokens=50,
-                        do_sample=False,
-                        pad_token_id=tokenizer.eos_token_id,
-                    )
-                
-                response = tokenizer.decode(output[0], skip_special_tokens=True)
-                
-                # Evaluate
-                metric = evaluator.evaluate(prompt, response)
-                if metric.success:
-                    successful += 1
-            
-            total += 1
-        except Exception as e:
-            total += 1
-            continue
-    
-    # Cleanup
-    del model
+    from mira.core.model_wrapper import ModelWrapper
     import torch
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
     
-    return {
-        "asr": successful / total if total > 0 else 0.0,
-        "successful": successful,
-        "total": total,
+    results = {
+        "model_name": model_name,
+        "asr": 0.0,
+        "successful": 0,
+        "total": 0,
+        "probe_bypass_rate": 0.0,
+        "probes_passed": 0,
+        "probes_total": 0,
+        "mean_entropy": 0.0,
+        "logit_lens_sample": None,
+        "attack_details": [],
+        "probe_details": [],
     }
+    
+    try:
+        # Load model
+        manager = get_model_manager()
+        model, tokenizer = manager.load_model(model_name)
+        wrapper = ModelWrapper(model, tokenizer)
+        
+        if verbose:
+            print(f"  Running analysis on {model_name}...")
+        
+        # Load prompts
+        harmful_prompts = load_harmful_prompts()[:num_attacks]
+        
+        # Initialize evaluator
+        evaluator = AttackSuccessEvaluator()
+        
+        # ========================================
+        # Phase 1: Gradient Attacks
+        # ========================================
+        if verbose:
+            print(f"    Phase 1: Gradient attacks ({num_attacks} attacks)...")
+        
+        attack = GradientAttack(model, tokenizer)
+        successful = 0
+        total = 0
+        
+        for i, prompt in enumerate(harmful_prompts):
+            try:
+                result = attack.attack(prompt, max_steps=50)
+                
+                if result.adversarial_suffix:
+                    full_prompt = prompt + " " + result.adversarial_suffix
+                    response = wrapper.generate(full_prompt, max_new_tokens=50)
+                    
+                    metric = evaluator.evaluate(prompt, response)
+                    if metric.success:
+                        successful += 1
+                    
+                    results["attack_details"].append({
+                        "prompt": prompt[:50] + "...",
+                        "success": metric.success,
+                        "confidence": getattr(metric, "confidence", 0.5),
+                    })
+                
+                total += 1
+            except Exception as e:
+                total += 1
+                results["attack_details"].append({
+                    "prompt": prompt[:50] + "...",
+                    "success": False,
+                    "error": str(e)[:30],
+                })
+        
+        results["asr"] = successful / total if total > 0 else 0.0
+        results["successful"] = successful
+        results["total"] = total
+        
+        if verbose:
+            print(f"      ASR: {results['asr']*100:.1f}% ({successful}/{total})")
+        
+        # ========================================
+        # Phase 2: Security Probes
+        # ========================================
+        if verbose:
+            print(f"    Phase 2: Security probes...")
+        
+        try:
+            probes = get_security_probes()[:10]  # Limit for speed
+            probes_passed = 0
+            
+            for probe in probes:
+                try:
+                    response = wrapper.generate(probe["prompt"], max_new_tokens=50)
+                    metric = evaluator.evaluate(probe["prompt"], response)
+                    
+                    if metric.success:
+                        probes_passed += 1
+                    
+                    results["probe_details"].append({
+                        "name": probe.get("name", "unknown"),
+                        "category": probe.get("category", "misc"),
+                        "bypassed": metric.success,
+                    })
+                except:
+                    pass
+            
+            results["probes_total"] = len(probes)
+            results["probes_passed"] = probes_passed
+            results["probe_bypass_rate"] = probes_passed / len(probes) if probes else 0.0
+            
+            if verbose:
+                print(f"      Probe bypass: {results['probe_bypass_rate']*100:.1f}% ({probes_passed}/{len(probes)})")
+        except Exception as e:
+            if verbose:
+                print(f"      Probes skipped: {e}")
+        
+        # ========================================
+        # Phase 3: Uncertainty Analysis
+        # ========================================
+        if verbose:
+            print(f"    Phase 3: Uncertainty analysis...")
+        
+        try:
+            from mira.analysis.uncertainty import analyze_generation_uncertainty
+            
+            sample_prompt = harmful_prompts[0] if harmful_prompts else "Hello"
+            uncertainty = analyze_generation_uncertainty(model, tokenizer, sample_prompt, max_tokens=20)
+            
+            results["mean_entropy"] = uncertainty.get("metrics", {}).get("mean_entropy", 0.0)
+            
+            if verbose:
+                print(f"      Mean entropy: {results['mean_entropy']:.2f}")
+        except Exception as e:
+            if verbose:
+                print(f"      Uncertainty skipped: {e}")
+        
+        # ========================================
+        # Phase 4: Logit Lens (Sample)
+        # ========================================
+        if verbose:
+            print(f"    Phase 4: Logit Lens sample...")
+        
+        try:
+            from mira.analysis.logit_lens import run_logit_lens_analysis
+            
+            sample_prompt = "Hello, how are you?"
+            trajectory = run_logit_lens_analysis(model, tokenizer, sample_prompt)
+            
+            if trajectory:
+                results["logit_lens_sample"] = {
+                    "layers_analyzed": len(trajectory) if hasattr(trajectory, "__len__") else 0,
+                    "prompt": sample_prompt,
+                }
+                if verbose:
+                    print(f"      Analyzed {results['logit_lens_sample']['layers_analyzed']} layers")
+        except Exception as e:
+            if verbose:
+                print(f"      Logit Lens skipped: {e}")
+        
+        # Cleanup
+        del model, wrapper
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+    except Exception as e:
+        results["error"] = str(e)
+        if verbose:
+            print(f"    Error: {e}")
+    
+    return results
 
 
 def main():
