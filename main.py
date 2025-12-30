@@ -44,6 +44,16 @@ from mira.visualization import ResearchChartGenerator
 from mira.visualization import plot_subspace_2d
 from mira.visualization.interactive_html import InteractiveViz
 
+# Import new mechanistic analysis tools
+try:
+    from mira.analysis.logit_lens import LogitProjector, run_logit_lens_analysis
+    from mira.analysis.uncertainty import UncertaintyAnalyzer, analyze_generation_uncertainty
+    ADVANCED_ANALYSIS_AVAILABLE = True
+except ImportError:
+    ADVANCED_ANALYSIS_AVAILABLE = False
+    LogitProjector = None
+    UncertaintyAnalyzer = None
+
 # Import new judge system and research report
 try:
     from mira.judge import EnsembleJudge, JudgeConfig
