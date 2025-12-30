@@ -164,22 +164,28 @@ def main():
     print("  MIRA MODE SELECTION")
     print("="*70)
     print("""
-  [1] Standard Security Testing (Default)
-      → Full pipeline: Subspace analysis + Attacks + Probes + Report
+  [1] Complete Research Pipeline (Default) ⭐
+      → Full integration: Subspace + Attacks + Probes + Report
+      → NEW: Logit Lens analysis + Uncertainty tracking + SSR
+      → Live visualization + Academic report
       
   [2] Multi-Model Comparison
       → Compare ASR across multiple models (GPT-2, Pythia, etc.)
+      → Automated testing and ranking
       
-  [3] Mechanistic Analysis Tools
+  [3] Mechanistic Analysis Only
       → Logit Lens, Uncertainty Analysis, Activation Hooks
+      → Deep dive into model internals
       
-  [4] SSR Optimization
+  [4] SSR Attack Optimization
       → Advanced subspace steering attack optimization
+      → Extract refusal directions and optimize suffixes
       
   [5] Download Models
       → Download comparison models from HuggingFace
+      → Batch download with size filtering
       
-""") # Removed the extra "="*70 as it was causing a double line
+""")
     
     try:
         mode_choice = input("  Select mode (1-5) or press Enter for default: ").strip()
