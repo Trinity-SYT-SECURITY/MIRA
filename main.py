@@ -441,6 +441,14 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
         total = 0
         
         for i, prompt in enumerate(harmful_prompts):
+            # Show progress
+            if verbose:
+                progress = f"[{i+1}/{len(harmful_prompts)}]"
+                bar_len = 20
+                filled = int(bar_len * (i + 1) / len(harmful_prompts))
+                bar = "█" * filled + "░" * (bar_len - filled)
+                print(f"\r      {bar} {progress} Attacking...", end="", flush=True)
+            
             try:
                 result = attack.attack(prompt, max_steps=50)
                 
@@ -467,6 +475,10 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                     "error": str(e)[:30],
                 })
         
+        # Clear progress line
+        if verbose:
+            print("\r" + " " * 60 + "\r", end="")
+        
         results["asr"] = successful / total if total > 0 else 0.0
         results["successful"] = successful
         results["total"] = total
@@ -484,7 +496,15 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
             probes = get_security_probes()[:10]  # Limit for speed
             probes_passed = 0
             
-            for probe in probes:
+            for idx, probe in enumerate(probes):
+                # Show progress
+                if verbose:
+                    progress = f"[{idx+1}/{len(probes)}]"
+                    bar_len = 20
+                    filled = int(bar_len * (idx + 1) / len(probes))
+                    bar = "█" * filled + "░" * (bar_len - filled)
+                    print(f"\r      {bar} {progress} Testing probe...", end="", flush=True)
+                
                 try:
                     response = wrapper.generate(probe["prompt"], max_new_tokens=50)
                     metric = evaluator.evaluate_single(probe["prompt"], response)
@@ -499,6 +519,10 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                     })
                 except:
                     pass
+            
+            # Clear progress line
+            if verbose:
+                print("\r" + " " * 60 + "\r", end="")
             
             results["probes_total"] = len(probes)
             results["probes_passed"] = probes_passed
