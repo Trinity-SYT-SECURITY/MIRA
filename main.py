@@ -154,12 +154,25 @@ def run_complete_multi_model_pipeline():
     # Get model manager
     manager = get_model_manager()
     
-    # Show available models
-    print("  Available models:")
-    downloaded = manager.list_downloaded_models()
+    # Judge/embedding models - NOT for attack testing
+    JUDGE_MODELS = [
+        "distilbert-base-uncased-finetuned-sst-2-english",  # Attack success judge
+        "unitary/toxic-bert",                                # Toxic/NSFW judge
+        "sentence-transformers/all-MiniLM-L6-v2",           # Semantic similarity
+        "BAAI/bge-base-en-v1.5",                            # Embedding model
+    ]
+    
+    # Get downloaded models and filter out judge models
+    all_downloaded = manager.list_downloaded_models()
+    downloaded = [m for m in all_downloaded if m not in JUDGE_MODELS]
+    
+    # Show available models (attack models only)
+    print("  Available models for attack testing:")
+    print("  (Judge/embedding models are filtered out)")
+    print()
     
     if not downloaded:
-        print("\n  No models available. Please download models first (Mode 5).")
+        print("  No attack models available. Please download models first (Mode 5).")
         return
     
     for i, m in enumerate(downloaded):
