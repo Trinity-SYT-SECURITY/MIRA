@@ -56,7 +56,8 @@ class ModelWrapper:
     
     def __init__(
         self,
-        model_name: str,
+        model_name_or_model,
+        tokenizer=None,
         device: Optional[str] = None,
         dtype: Optional[torch.dtype] = None,
         cache_dir: Optional[str] = None,
@@ -65,32 +66,62 @@ class ModelWrapper:
         Initialize the model wrapper.
         
         Args:
-            model_name: HuggingFace model identifier or path
+            model_name_or_model: HuggingFace model identifier/path OR pre-loaded model object
+            tokenizer: Pre-loaded tokenizer (only needed if model_name_or_model is a model object)
             device: Device to load model on (auto-detected if None)
             dtype: Data type for model weights
             cache_dir: Directory for caching model files
         """
-        self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = dtype or torch.float32
         
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            cache_dir=cache_dir,
-            trust_remote_code=True,
-        )
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        
-        # Load model (use 'dtype' instead of deprecated 'torch_dtype')
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            cache_dir=cache_dir,
-            dtype=self.dtype,
-            trust_remote_code=True,
-        ).to(self.device)
-        self.model.eval()
+        # Check if we received a pre-loaded model or a model name string
+        if isinstance(model_name_or_model, str):
+            # Load from model name/path
+            self.model_name = model_name_or_model
+            
+            # Try project/models first
+            from mira.utils.model_manager import get_model_manager
+            manager = get_model_manager()
+            model_path = manager.get_model_path(model_name_or_model)
+            
+            if manager.is_model_downloaded(model_name_or_model):
+                # Load from project/models
+                load_path = str(model_path)
+            else:
+                # Fall back to model name (HuggingFace)
+                load_path = model_name_or_model
+            
+            # Load tokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                load_path,
+                cache_dir=cache_dir,
+                trust_remote_code=True,
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+            # Load model
+            self.model = AutoModelForCausalLM.from_pretrained(
+                load_path,
+                cache_dir=cache_dir,
+                torch_dtype=self.dtype,
+                trust_remote_code=True,
+                attn_implementation="eager",  # Enable output_attentions
+            ).to(self.device)
+            self.model.eval()
+        else:
+            # Pre-loaded model passed
+            self.model = model_name_or_model
+            self.tokenizer = tokenizer
+            self.model_name = getattr(self.model, 'name_or_path', 'unknown')
+            
+            if self.tokenizer is None:
+                raise ValueError("tokenizer must be provided when passing a pre-loaded model")
+            
+            # Move model to device if needed
+            self.model = self.model.to(self.device)
+            self.model.eval()
         
         # Model properties
         self.n_layers = self.model.config.num_hidden_layers

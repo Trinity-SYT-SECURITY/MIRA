@@ -894,8 +894,31 @@ class ResearchReportGenerator:
         timestamp: str,
         total_attacks: int,
         attack_types: int = 0,
+        attacker_model: str = None,
+        judge_model: str = None,
     ) -> str:
         """Generate report header with research context."""
+        # Build model info section
+        model_info = f'''
+                <div class="meta-item">
+                    <div class="label">🎯 Target Model</div>
+                    <div class="value">{model_name}</div>
+                </div>'''
+        
+        if attacker_model:
+            model_info += f'''
+                <div class="meta-item">
+                    <div class="label">⚔️ Attacker Model</div>
+                    <div class="value">{attacker_model}</div>
+                </div>'''
+        
+        if judge_model:
+            model_info += f'''
+                <div class="meta-item">
+                    <div class="label">⚖️ Judge Model</div>
+                    <div class="value">{judge_model}</div>
+                </div>'''
+        
         return f'''
         <header class="header">
             <h1>{title}</h1>
@@ -904,20 +927,17 @@ class ResearchReportGenerator:
                 between normal and adversarial prompts in transformer-based language models.
             </p>
             <div class="meta-info">
+                {model_info}
                 <div class="meta-item">
-                    <div class="label">Target Model</div>
-                    <div class="value">{model_name}</div>
-                </div>
-                <div class="meta-item">
-                    <div class="label">Generated</div>
+                    <div class="label">📅 Generated</div>
                     <div class="value">{timestamp}</div>
                 </div>
                 <div class="meta-item">
-                    <div class="label">Total Tests</div>
+                    <div class="label">🧪 Total Tests</div>
                     <div class="value">{total_attacks}</div>
                 </div>
                 <div class="meta-item">
-                    <div class="label">Attack Types</div>
+                    <div class="label">📊 Attack Types</div>
                     <div class="value">{attack_types}</div>
                 </div>
             </div>
@@ -1144,12 +1164,31 @@ class ResearchReportGenerator:
         num_layers: int = 12,
     ) -> str:
         """Generate layer-wise activation comparison with metrics table."""
+        # If no real data available, show informative message instead of fake data
+        if clean_activations is None and attack_activations is None:
+            return '''
+            <section class="section">
+                <div class="section-header">
+                    <div class="section-icon">[LAYERS]</div>
+                    <h2>Layer-wise Activation Analysis</h2>
+                </div>
+                <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); 
+                            border-radius: 8px; padding: 20px; text-align: center; color: var(--warning);">
+                    <strong>⚠️ No Real Layer Activation Data Available</strong><br/>
+                    <span style="font-size: 0.9em; opacity: 0.8;">
+                        Layer activations were not captured during this analysis run.<br/>
+                        Re-run analysis with Mode 2 (Live Visualization) to capture real activation data.
+                    </span>
+                </div>
+            </section>
+            '''
+        
         using_fallback = False
         if clean_activations is None:
-            clean_activations = [0.3 + 0.02 * i for i in range(num_layers)]
+            clean_activations = attack_activations  # Use attack as baseline if no clean
             using_fallback = True
         if attack_activations is None:
-            attack_activations = [0.25 + 0.04 * i for i in range(num_layers)]
+            attack_activations = clean_activations  # Use clean as attack if no attack
             using_fallback = True
         
         # Ensure lists are the right length
@@ -1250,6 +1289,27 @@ class ResearchReportGenerator:
                 Comparison of internal activation magnitudes across transformer layers.
                 Divergence patterns indicate where the model's processing differs between normal and attack inputs.
             </p>
+            <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); 
+                        border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <div style="font-weight: 600; margin-bottom: 8px; color: var(--accent);">📚 Layer Functions Explained</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 0.9em;">
+                    <div>
+                        <strong>Layers 0-3 (Shallow)</strong><br/>
+                        Syntax/vocabulary processing. Captures word types, basic sentence structure.
+                    </div>
+                    <div>
+                        <strong>Layers 4-7 (Middle)</strong><br/>
+                        Semantic understanding. Interprets context, topic, and intent.
+                    </div>
+                    <div>
+                        <strong>Layers 8+ (Deep)</strong><br/>
+                        Decision making. Determines output, handles safety judgments.
+                    </div>
+                </div>
+                <div style="margin-top: 10px; font-size: 0.85em; color: var(--text-secondary);">
+                    💡 <em>Large divergence at deep layers often indicates the model is making different safety decisions for attack vs normal inputs.</em>
+                </div>
+            </div>
             {warning_html}
             <div class="comparison-grid">
                 <div class="comparison-panel clean">
@@ -1277,6 +1337,25 @@ class ResearchReportGenerator:
         head_idx: int = 0,
     ) -> str:
         """Generate attention pattern comparison between clean and attack."""
+        
+        # If no real data available, show informative message
+        if clean_attention is None and attack_attention is None:
+            return '''
+            <section class="section">
+                <div class="section-header">
+                    <div class="section-icon">[ATTENTION]</div>
+                    <h2>Attention Pattern Analysis</h2>
+                </div>
+                <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); 
+                            border-radius: 8px; padding: 20px; text-align: center; color: var(--warning);">
+                    <strong>⚠️ No Real Attention Data Available</strong><br/>
+                    <span style="font-size: 0.9em; opacity: 0.8;">
+                        Attention patterns were not captured during this analysis run.<br/>
+                        Re-run analysis with Mode 2 (Live Visualization) to capture real attention data.
+                    </span>
+                </div>
+            </section>
+            '''
         
         using_fallback = (clean_attention is None or attack_attention is None)
         
@@ -1902,6 +1981,322 @@ class ResearchReportGenerator:
         output_path.write_text(html, encoding="utf-8")
         
         return str(output_path)
+    
+    def generate_comparison_report(
+        self,
+        title: str = "Multi-Model Security Comparison",
+        models: List[Dict[str, Any]] = None,
+        all_results: List[Dict[str, Any]] = None,
+        layer_comparisons: Optional[Dict[str, Any]] = None,
+        phase_comparison: Optional[Dict[str, Any]] = None,
+        cross_model_analysis: Optional[Dict[str, Any]] = None,
+        transferability_analysis: Optional[Dict[str, Any]] = None,
+        output_filename: Optional[str] = None,
+    ) -> str:
+        """
+        Generate unified multi-model comparison report with 4-level analysis.
+        
+        Args:
+            title: Report title
+            models: List of model comparison data with asr, probe_bypass, entropy
+            all_results: Complete results from all models
+            layer_comparisons: Layer activation data from all models
+            phase_comparison: Level 2 - Phase sensitivity analysis results
+            cross_model_analysis: Level 3 - Internal metrics (similarity, entropy, layers)
+            transferability_analysis: Level 4 - Attack transferability results
+            output_filename: Output filename
+        
+        Returns:
+            Path to generated report
+        """
+        models = models or []
+        all_results = all_results or []
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Build model comparison table
+        model_rows = ""
+        for m in sorted(models, key=lambda x: x.get("asr", 0), reverse=True):
+            asr = m.get("asr", 0)
+            vuln_class = "danger" if asr > 0.5 else "warning" if asr > 0.2 else "success"
+            vuln_label = "High Risk" if asr > 0.5 else "Medium" if asr > 0.2 else "Low Risk"
+            model_rows += f'''
+            <tr>
+                <td><strong>{m.get("model", "unknown")}</strong></td>
+                <td class="{vuln_class}">{asr*100:.1f}%</td>
+                <td>{m.get("probe_bypass", 0)*100:.1f}%</td>
+                <td>{m.get("entropy", 0):.2f}</td>
+                <td><span class="badge {vuln_class}">{vuln_label}</span></td>
+            </tr>
+'''
+        
+        # Key findings
+        findings_html = ""
+        if models:
+            best = max(models, key=lambda x: x.get("asr", 0))
+            worst = min(models, key=lambda x: x.get("asr", 0))
+            avg_asr = sum(m.get("asr", 0) for m in models) / len(models)
+            
+            findings_html = f'''
+            <div class="findings-grid">
+                <div class="finding-card danger">
+                    <div class="finding-label">Most Vulnerable</div>
+                    <div class="finding-value">{best.get("model", "N/A")}</div>
+                    <div class="finding-detail">{best.get("asr", 0)*100:.1f}% ASR</div>
+                </div>
+                <div class="finding-card success">
+                    <div class="finding-label">Most Robust</div>
+                    <div class="finding-value">{worst.get("model", "N/A")}</div>
+                    <div class="finding-detail">{worst.get("asr", 0)*100:.1f}% ASR</div>
+                </div>
+                <div class="finding-card info">
+                    <div class="finding-label">Average ASR</div>
+                    <div class="finding-value">{avg_asr*100:.1f}%</div>
+                    <div class="finding-detail">{len(models)} models tested</div>
+                </div>
+            </div>
+'''
+        
+        # Layer comparison chart (if available)
+        layer_chart_html = ""
+        if layer_comparisons and layer_comparisons.get("models"):
+            layer_chart_html = self._generate_multi_model_layer_chart(layer_comparisons["models"])
+        
+        html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    {self._get_styles()}
+    <style>
+        .findings-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 20px 0; }}
+        .finding-card {{ background: var(--bg-tertiary); border-radius: 12px; padding: 20px; text-align: center; border-left: 4px solid; }}
+        .finding-card.danger {{ border-color: var(--danger); }}
+        .finding-card.success {{ border-color: var(--success); }}
+        .finding-card.info {{ border-color: var(--info); }}
+        .finding-label {{ font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .finding-value {{ font-size: 1.2rem; font-weight: 600; color: var(--text-primary); }}
+        .finding-detail {{ font-size: 0.9rem; color: var(--text-secondary); margin-top: 4px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🔬 {title}</h1>
+            <p class="subtitle">Comparative Security Analysis Across Multiple LLM Architectures</p>
+            <div class="meta">
+                <span>Generated: {timestamp}</span>
+                <span>Models: {len(models)}</span>
+            </div>
+        </header>
+        
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[KEY]</div>
+                <h2>Key Findings</h2>
+            </div>
+            {findings_html}
+        </section>
+        
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[COMPARE]</div>
+                <h2>Model Comparison</h2>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Attack Success Rate</th>
+                        <th>Probe Bypass</th>
+                        <th>Entropy</th>
+                        <th>Risk Level</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {model_rows}
+                </tbody>
+            </table>
+        </section>
+        
+        {layer_chart_html}
+        
+        <!-- Level 2: Phase Sensitivity Analysis -->
+        {self._generate_phase_sensitivity_section(phase_comparison) if phase_comparison else ""}
+        
+        <!-- Level 3: Cross-Model Internal Metrics -->
+        {self._generate_cross_model_metrics_section(cross_model_analysis) if cross_model_analysis else ""}
+        
+        <!-- Level 4: Attack Transferability -->
+        {self._generate_transferability_section(transferability_analysis) if transferability_analysis else ""}
+        
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[METHODOLOGY]</div>
+                <h2>Methodology</h2>
+            </div>
+            <p class="section-description">
+                Each model was tested with identical attack vectors including prompt-based jailbreaks 
+                (DAN, encoding, roleplay, social engineering) and gradient-based attacks (GCG suffix optimization).
+                Attack success was determined using an ensemble judge system combining keyword detection and ML classifiers.
+            </p>
+        </section>
+        
+        {self._generate_footer()}
+    </div>
+</body>
+</html>'''
+        
+        # Save
+        if output_filename is None:
+            output_filename = f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        
+        output_path = self.output_dir / output_filename
+        output_path.write_text(html, encoding="utf-8")
+        
+        return str(output_path)
+    
+    def _generate_multi_model_layer_chart(self, models_data: List[Dict[str, Any]]) -> str:
+        """Generate layer activation comparison chart for multiple models."""
+        if not models_data:
+            return ""
+        
+        # Build chart rows
+        rows_html = ""
+        colors = ["#818cf8", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899"]
+        
+        for idx, model in enumerate(models_data[:6]):  # Limit to 6 models
+            color = colors[idx % len(colors)]
+            name = model.get("name", f"Model {idx+1}")
+            attack_acts = model.get("attack", [])
+            
+            if not attack_acts:
+                continue
+            
+            # Build bars
+            bars_html = ""
+            max_val = max(attack_acts) if attack_acts else 1
+            for layer_idx, val in enumerate(attack_acts[:12]):
+                height = (val / max_val) * 100 if max_val > 0 else 0
+                bars_html += f'<div class="bar" style="height: {height}%; background: {color};" title="Layer {layer_idx}: {val:.3f}"></div>'
+            
+            rows_html += f'''
+            <div class="model-row">
+                <div class="model-name" style="color: {color};">{name}</div>
+                <div class="bars-container">{bars_html}</div>
+            </div>
+'''
+        
+        return f'''
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[LAYERS]</div>
+                <h2>Layer Activation Comparison</h2>
+            </div>
+            <p class="section-description">
+                Comparison of layer-wise activation magnitudes during attack prompts across models.
+                Higher activations in later layers may indicate more complex safety mechanisms.
+            </p>
+            <style>
+                .model-row {{ display: flex; align-items: center; margin: 12px 0; gap: 16px; }}
+                .model-name {{ width: 150px; font-size: 0.85rem; font-weight: 500; }}
+                .bars-container {{ display: flex; gap: 4px; align-items: flex-end; height: 60px; flex: 1; }}
+                .bars-container .bar {{ flex: 1; min-width: 20px; border-radius: 2px 2px 0 0; transition: height 0.3s; }}
+            </style>
+            <div class="layer-chart">
+                {rows_html}
+            </div>
+        </section>
+'''
+    
+    def _generate_phase_sensitivity_section(self, phase_comparison: Dict[str, Any]) -> str:
+        """Generate Level 2: Phase Sensitivity Analysis section."""
+        from mira.analysis.phase_comparison import PhaseComparisonAnalyzer
+        
+        analyzer = PhaseComparisonAnalyzer()
+        heatmap_html = analyzer.generate_phase_heatmap_html(phase_comparison)
+        
+        return f'''
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[LEVEL 2]</div>
+                <h2>Phase Sensitivity Analysis</h2>
+            </div>
+            <p class="section-description">
+                Analysis of which attack phase each model fails at. This reveals the relative robustness
+                of different models across the attack pipeline.
+            </p>
+            {heatmap_html}
+        </section>
+'''
+    
+    def _generate_cross_model_metrics_section(self, cross_model_analysis: Dict[str, Any]) -> str:
+        """Generate Level 3: Cross-Model Internal Metrics section."""
+        from mira.analysis.cross_model_metrics import CrossModelAnalyzer
+        
+        analyzer = CrossModelAnalyzer()
+        
+        # Refusal direction similarity
+        similarity_matrix = cross_model_analysis.get("similarity_matrix")
+        model_names = cross_model_analysis.get("model_names", [])
+        similarity_html = analyzer.generate_similarity_matrix_html(similarity_matrix, model_names) if similarity_matrix is not None else ""
+        
+        # Entropy patterns
+        entropy_analysis = cross_model_analysis.get("entropy_analysis", {})
+        entropy_html = analyzer.generate_entropy_comparison_html(entropy_analysis) if entropy_analysis else ""
+        
+        return f'''
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[LEVEL 3]</div>
+                <h2>Cross-Model Internal Metrics</h2>
+            </div>
+            <p class="section-description">
+                Comparison of internal model states: refusal direction similarity, entropy patterns,
+                and layer divergence points. These metrics reveal mechanistic similarities across models.
+            </p>
+            
+            <h3 style="margin-top: 24px; color: var(--text-primary);">Refusal Direction Similarity</h3>
+            {similarity_html}
+            
+            <h3 style="margin-top: 32px; color: var(--text-primary);">Entropy Pattern Analysis</h3>
+            {entropy_html}
+        </section>
+'''
+    
+    def _generate_transferability_section(self, transferability_analysis: Dict[str, Any]) -> str:
+        """Generate Level 4: Attack Transferability section."""
+        from mira.analysis.transferability import TransferabilityAnalyzer
+        
+        analyzer = TransferabilityAnalyzer()
+        
+        # Transfer matrix
+        transfer_data = transferability_analysis.get("transfer_data", {})
+        transfer_html = analyzer.generate_transfer_matrix_html(transfer_data) if transfer_data else ""
+        
+        # Systematic vs random
+        systematic_comparison = transferability_analysis.get("systematic_comparison", {})
+        systematic_html = analyzer.generate_systematic_vs_random_html(systematic_comparison) if systematic_comparison else ""
+        
+        return f'''
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[LEVEL 4]</div>
+                <h2>Attack Transferability</h2>
+            </div>
+            <p class="section-description">
+                Analysis of attack logic transferability across models and comparison of MIRA's systematic
+                approach vs random baseline attacks.
+            </p>
+            
+            <h3 style="margin-top: 24px; color: var(--text-primary);">Cross-Model Transfer Rates</h3>
+            {transfer_html}
+            
+            <h3 style="margin-top: 32px; color: var(--text-primary);">Systematic vs Random Baseline</h3>
+            {systematic_html}
+        </section>
+'''
 
 
 def generate_research_report(

@@ -440,12 +440,80 @@ def run_complete_multi_model_pipeline():
                     "attack": result["layer_activations"].get("attack", []),
                 })
         
+        # ========================================
+        # Run 4-Level Comparison Analysis
+        # ========================================
+        print(f"  Running 4-level comparison analysis...")
+        
+        # Level 2: Phase Sensitivity Analysis
+        phase_comparison = None
+        try:
+            from mira.analysis.phase_comparison import PhaseComparisonAnalyzer
+            
+            phase_analyzer = PhaseComparisonAnalyzer(failure_threshold=0.3)
+            phase_comparison = phase_analyzer.analyze_phase_sensitivity(all_results)
+            print(f"    ✓ Level 2: Phase Sensitivity ({len(phase_comparison)} models)")
+        except Exception as e:
+            print(f"    ⚠ Level 2 skipped: {e}")
+        
+        # Level 3: Cross-Model Internal Metrics
+        cross_model_analysis = None
+        try:
+            from mira.analysis.cross_model_metrics import CrossModelAnalyzer
+            
+            cross_analyzer = CrossModelAnalyzer()
+            
+            # Refusal direction similarity
+            similarity_matrix, model_names = cross_analyzer.compute_refusal_direction_similarity(all_results)
+            
+            # Entropy patterns
+            entropy_analysis = cross_analyzer.analyze_entropy_patterns(all_results)
+            
+            # Layer divergence
+            layer_analysis = cross_analyzer.identify_common_failure_layers(all_results)
+            
+            cross_model_analysis = {
+                "similarity_matrix": similarity_matrix,
+                "model_names": model_names,
+                "entropy_analysis": entropy_analysis,
+                "layer_analysis": layer_analysis,
+            }
+            
+            print(f"    ✓ Level 3: Internal Metrics (similarity, entropy, layers)")
+        except Exception as e:
+            print(f"    ⚠ Level 3 skipped: {e}")
+        
+        # Level 4: Attack Transferability
+        transferability_analysis = None
+        try:
+            from mira.analysis.transferability import TransferabilityAnalyzer
+            
+            transfer_analyzer = TransferabilityAnalyzer()
+            
+            # Cross-model transfer rates
+            transfer_data = transfer_analyzer.compute_cross_model_transfer(all_results)
+            
+            # Systematic vs random comparison
+            systematic_comparison = transfer_analyzer.compare_systematic_vs_random(all_results)
+            
+            transferability_analysis = {
+                "transfer_data": transfer_data,
+                "systematic_comparison": systematic_comparison,
+            }
+            
+            print(f"    ✓ Level 4: Transferability (transfer rates, systematic vs random)")
+        except Exception as e:
+            print(f"    ⚠ Level 4 skipped: {e}")
+        
         # Generate unified report with model comparison
         report_path = report_gen.generate_comparison_report(
             title="MIRA Multi-Model Security Comparison",
             models=model_comparison_data,
             all_results=all_results,
             layer_comparisons=all_layer_activations,
+            phase_comparison=phase_comparison,
+            cross_model_analysis=cross_model_analysis,
+            transferability_analysis=transferability_analysis,
         )
         
         print(f"  ✓ Unified Report: {report_path}")
@@ -715,6 +783,18 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
             except Exception as e:
                 if verbose:
                     print(f"skipped ({e})")
+            
+            # Store internal metrics for cross-model comparison (Level 3)
+            if hasattr(probe_result, 'refusal_direction') and probe_result.refusal_direction is not None:
+                results["internal_metrics"] = {
+                    "refusal_direction": probe_result.refusal_direction.cpu().numpy().tolist(),
+                    "refusal_norm": float(probe_result.refusal_direction.norm()),
+                    "entropy_by_attack": {
+                        "successful": [],
+                        "failed": [],
+                    },
+                    "layer_divergence_point": -1,  # Will be updated during analysis
+                }
         except Exception as e:
             if verbose:
                 print(f"      Subspace analysis: {e}")
@@ -1093,6 +1173,18 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
             
             if verbose:
                 print(f"      Mean entropy: {results['mean_entropy']:.2f}")
+            
+            # Calculate layer divergence point for internal_metrics
+            if "internal_metrics" in results and "layer_activations" in results:
+                clean_acts = results["layer_activations"].get("clean", [])
+                attack_acts = results["layer_activations"].get("attack", [])
+                
+                if clean_acts and attack_acts:
+                    for i in range(min(len(clean_acts), len(attack_acts))):
+                        diff = abs(attack_acts[i] - clean_acts[i])
+                        if diff > 0.1:  # 10% difference threshold
+                            results["internal_metrics"]["layer_divergence_point"] = i
+                            break
         except Exception as e:
             if verbose:
                 print(f"      Uncertainty skipped: {e}")

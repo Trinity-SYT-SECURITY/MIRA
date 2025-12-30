@@ -12,6 +12,145 @@ from typing import Optional, List, Dict, Any
 import sys
 
 
+# ============================================================
+# MODEL REGISTRY - Role assignments and recommendations
+# ============================================================
+# Roles: target (被攻擊), judge (評估), attacker (攻擊者)
+# recommended: True = CPU-friendly and well-tested
+
+MODEL_REGISTRY = {
+    # ========== TARGET MODELS (被攻擊的模型) ==========
+    "HuggingFaceTB/SmolLM2-135M-Instruct": {
+        "local_name": "smollm2-135m",
+        "role": "target",
+        "recommended": True,
+        "size": "135M",
+        "description": "Ultra-lightweight, good for baseline testing",
+    },
+    "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
+        "local_name": "smollm2-1.7b",
+        "role": "target",
+        "recommended": True,
+        "size": "1.7B",
+        "description": "Mid-size SmolLM, good CPU performance",
+    },
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
+        "local_name": "tinyllama-1.1b",
+        "role": "target",
+        "recommended": True,
+        "size": "1.1B",
+        "description": "LLaMA-based, great for mechanistic analysis",
+    },
+    "gpt2": {
+        "local_name": "gpt2",
+        "role": "target",
+        "recommended": False,
+        "size": "117M",
+        "description": "Classic baseline model",
+    },
+    "gpt2-medium": {
+        "local_name": "gpt2-medium",
+        "role": "target",
+        "recommended": False,
+        "size": "345M",
+        "description": "Medium GPT-2 variant",
+    },
+    "distilgpt2": {
+        "local_name": "distilgpt2",
+        "role": "target",
+        "recommended": False,
+        "size": "82M",
+        "description": "Distilled GPT-2, fast but limited",
+    },
+    "EleutherAI/pythia-160m": {
+        "local_name": "EleutherAI--pythia-160m",
+        "role": "target",
+        "recommended": False,
+        "size": "160M",
+        "description": "Pythia series, good for interpretability",
+    },
+    "EleutherAI/pythia-70m": {
+        "local_name": "EleutherAI--pythia-70m",
+        "role": "target",
+        "recommended": False,
+        "size": "70M",
+        "description": "Smallest Pythia, ultra-fast",
+    },
+    "Qwen/Qwen2-0.5B": {
+        "local_name": "Qwen--Qwen2-0.5B",
+        "role": "target",
+        "recommended": False,
+        "size": "0.5B",
+        "description": "Alibaba Qwen2, multilingual",
+    },
+    
+    # ========== JUDGE MODELS (評估模型) ==========
+    "distilbert-base-uncased-finetuned-sst-2-english": {
+        "local_name": "distilbert-base-uncased-finetuned-sst-2-english",
+        "role": "judge",
+        "recommended": True,
+        "size": "66M",
+        "description": "Attack success classifier",
+    },
+    "unitary/toxic-bert": {
+        "local_name": "unitary--toxic-bert",
+        "role": "judge",
+        "recommended": True,
+        "size": "110M",
+        "description": "Toxic content detector",
+    },
+    
+    # ========== ATTACKER MODELS (攻擊者模型) ==========
+    "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
+        "local_name": "smollm2-1.7b",
+        "role": "attacker",  # Can also be attacker
+        "recommended": True,
+        "size": "1.7B",
+        "description": "Can generate attack prompts",
+    },
+}
+
+
+def get_recommended_models(role: str = None) -> List[Dict[str, Any]]:
+    """
+    Get recommended models, optionally filtered by role.
+    
+    Args:
+        role: Filter by role ('target', 'judge', 'attacker', or None for all)
+        
+    Returns:
+        List of model info dicts
+    """
+    models = []
+    for hf_name, info in MODEL_REGISTRY.items():
+        if role is None or info.get("role") == role:
+            models.append({
+                "hf_name": hf_name,
+                **info
+            })
+    return models
+
+
+def get_model_info(model_name: str) -> Optional[Dict[str, Any]]:
+    """Get info for a specific model from registry."""
+    # Try exact match
+    if model_name in MODEL_REGISTRY:
+        return {"hf_name": model_name, **MODEL_REGISTRY[model_name]}
+    
+    # Try local name match
+    for hf_name, info in MODEL_REGISTRY.items():
+        if info.get("local_name") == model_name:
+            return {"hf_name": hf_name, **info}
+    
+    return None
+
+
+def is_model_recommended(model_name: str) -> bool:
+    """Check if model is recommended."""
+    info = get_model_info(model_name)
+    return info.get("recommended", False) if info else False
+
+
 class ModelManager:
     """
     Centralized model manager for MIRA.
@@ -279,6 +418,7 @@ class ModelManager:
                 model = AutoModelForCausalLM.from_pretrained(
                     str(model_path),
                     dtype=torch.float32,
+                    attn_implementation="eager",  # Enable output_attentions
                 )
                 print(f"  ✓ Loaded {model_name} from project/models")
             except Exception as e:
@@ -315,6 +455,7 @@ class ModelManager:
                 model = AutoModelForCausalLM.from_pretrained(
                     str(model_path),
                     dtype=torch.float32,
+                    attn_implementation="eager",  # Enable output_attentions
                 )
         
         model = model.to(device)
@@ -344,6 +485,7 @@ class ModelManager:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             dtype=torch.float32,
+            attn_implementation="eager",  # Enable output_attentions
         )
         
         return model, tokenizer
