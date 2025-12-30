@@ -297,37 +297,13 @@ class MultiModelRunner:
         self, 
         config: ModelConfig
     ) -> Tuple[Any, Any]:
-        """Load model and tokenizer."""
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        """Load model and tokenizer using centralized model manager."""
+        from mira.utils.model_manager import get_model_manager
         
-        device = config.device
-        if device == "auto":
-            if torch.cuda.is_available():
-                device = "cuda"
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                device = "mps"
-            else:
-                device = "cpu"
+        manager = get_model_manager()
         
-        tokenizer = AutoTokenizer.from_pretrained(
-            config.hf_name,
-            cache_dir=self.cache_dir,
-            trust_remote_code=config.trust_remote_code,
-        )
-        
-        # Set pad token if needed
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        
-        model = AutoModelForCausalLM.from_pretrained(
-            config.hf_name,
-            cache_dir=self.cache_dir,
-            trust_remote_code=config.trust_remote_code,
-            torch_dtype=torch.float32,
-        )
-        
-        model = model.to(device)
-        model.eval()
+        # Use model manager to load
+        model, tokenizer = manager.load_model(config.hf_name, device=config.device)
         
         return model, tokenizer
     

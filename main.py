@@ -122,6 +122,42 @@ def main():
     TOTAL_PHASES = 7 # Define TOTAL_PHASES early as it's used in print_phase calls
     
     # ================================================================
+    # FIRST-RUN SETUP: MODEL DIRECTORY
+    # ================================================================
+    from mira.utils.model_manager import setup_models, get_model_manager
+    
+    # Setup models directory (first-run only)
+    models_dir = setup_models(interactive=True)
+    model_manager = get_model_manager()
+    
+    # Check if any models are downloaded
+    downloaded_models = model_manager.list_downloaded_models()
+    if not downloaded_models:
+        print("\n" + "="*70)
+        print("  NO MODELS FOUND")
+        print("="*70)
+        print("""
+  MIRA requires language models to run security tests.
+  
+  Recommended starter models:
+    • gpt2 (0.5 GB) - Fast, good for testing
+    • EleutherAI/pythia-70m (0.3 GB) - Very small
+    • EleutherAI/pythia-160m (0.6 GB) - Small but capable
+  
+  Would you like to download these now?
+""")
+        try:
+            download_now = input("  Download recommended models? (y/n, default: y): ").strip().lower()
+            if not download_now or download_now == 'y':
+                from mira.utils.model_manager import download_required_models
+                download_required_models(
+                    model_names=["gpt2", "EleutherAI/pythia-70m", "EleutherAI/pythia-160m"],
+                    interactive=False
+                )
+        except:
+            pass
+    
+    # ================================================================
     # MODE SELECTION
     # ================================================================
     print("\n" + "="*70)
@@ -1449,14 +1485,22 @@ def run_multi_model_comparison():
 
 def run_mechanistic_analysis():
     """Run mechanistic analysis tools mode."""
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    import torch
+    from mira.utils.model_manager import get_model_manager
     
     print("\n" + "="*70)
     print("  MECHANISTIC ANALYSIS TOOLS")
     print("="*70 + "\n")
     
     # Select model
+    manager = get_model_manager()
+    downloaded = manager.list_downloaded_models()
+    
+    if downloaded:
+        print("  Downloaded models:")
+        for i, m in enumerate(downloaded):
+            print(f"    [{i+1}] {m}")
+        print()
+    
     model_name = input("  Model name (default: gpt2): ").strip()
     if not model_name:
         model_name = "gpt2"
@@ -1480,16 +1524,9 @@ def run_mechanistic_analysis():
     
     print(f"\n  Loading model: {model_name}...")
     
-    # Load model
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32)
-    
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
-    model.eval()
+    # Load model using model manager
+    model, tokenizer = manager.load_model(model_name)
+    device = next(model.parameters()).device
     
     print(f"  Model loaded on {device}\n")
     
@@ -1536,15 +1573,24 @@ def run_mechanistic_analysis():
 
 def run_ssr_optimization():
     """Run SSR optimization mode."""
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    import torch
+    from mira.utils.model_manager import get_model_manager
     from mira.analysis.reverse_search import extract_refusal_direction, SSROptimizer
+    import torch
     
     print("\n" + "="*70)
     print("  SSR OPTIMIZATION MODE")
     print("="*70 + "\n")
     
     # Select model
+    manager = get_model_manager()
+    downloaded = manager.list_downloaded_models()
+    
+    if downloaded:
+        print("  Downloaded models:")
+        for i, m in enumerate(downloaded):
+            print(f"    [{i+1}] {m}")
+        print()
+    
     model_name = input("  Model name (default: gpt2): ").strip()
     if not model_name:
         model_name = "gpt2"
@@ -1567,16 +1613,9 @@ def run_ssr_optimization():
     
     print(f"\n  Loading model: {model_name}...")
     
-    # Load model
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32)
-    
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
-    model.eval()
+    # Load model using model manager
+    model, tokenizer = manager.load_model(model_name)
+    device = next(model.parameters()).device
     
     print(f"  Model loaded on {device}\n")
     
