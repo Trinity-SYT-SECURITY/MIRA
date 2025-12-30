@@ -278,7 +278,7 @@ class ModelManager:
                 tokenizer = AutoTokenizer.from_pretrained(str(model_path))
                 model = AutoModelForCausalLM.from_pretrained(
                     str(model_path),
-                    torch_dtype=torch.float32,
+                    dtype=torch.float32,
                 )
                 print(f"  ✓ Loaded {model_name} from project/models")
             except Exception as e:
@@ -314,7 +314,7 @@ class ModelManager:
                 tokenizer = AutoTokenizer.from_pretrained(str(model_path))
                 model = AutoModelForCausalLM.from_pretrained(
                     str(model_path),
-                    torch_dtype=torch.float32,
+                    dtype=torch.float32,
                 )
         
         model = model.to(device)
@@ -343,7 +343,7 @@ class ModelManager:
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=torch.float32,
+            dtype=torch.float32,
         )
         
         return model, tokenizer

@@ -230,7 +230,7 @@ class ModelDownloader:
                 config.hf_name,
                 cache_dir=self.cache_dir,
                 trust_remote_code=config.trust_remote_code,
-                torch_dtype=torch.float32,
+                dtype=torch.float32,
             )
             
             if verbose:

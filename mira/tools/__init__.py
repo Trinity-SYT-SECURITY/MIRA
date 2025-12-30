@@ -97,7 +97,7 @@ def cmd_analyze(args):
     # Load model
     print(f"Loading model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.float32)
     
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -155,7 +155,7 @@ def cmd_ssr(args):
     # Load model
     print(f"Loading model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.float32)
     
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
