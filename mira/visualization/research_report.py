@@ -837,6 +837,56 @@ class ResearchReportGenerator:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
+    def _embed_chart(
+        self,
+        chart_path: str,
+        caption: str = "",
+        alt_text: str = "Chart"
+    ) -> str:
+        """
+        Embed a chart image into the HTML report.
+        
+        Args:
+            chart_path: Path to chart image file (relative or absolute)
+            caption: Caption text for the chart
+            alt_text: Alt text for accessibility
+            
+        Returns:
+            HTML string with embedded chart
+        """
+        chart_file = Path(chart_path)
+        
+        # If path is relative, resolve from output_dir parent
+        if not chart_file.is_absolute():
+            chart_file = self.output_dir.parent / chart_path
+        
+        if not chart_file.exists():
+            return f'''
+            <div class="chart-embed">
+                <div class="chart-embed-caption" style="color: var(--text-muted);">
+                    Chart not found: {chart_path}
+                </div>
+            </div>
+            '''
+        
+        # Embed as base64 for self-contained HTML
+        try:
+            import base64
+            with open(chart_file, 'rb') as f:
+                img_data = base64.b64encode(f.read()).decode('utf-8')
+            
+            img_tag = f'<img src="data:image/png;base64,{img_data}" alt="{alt_text}" />'
+        except Exception:
+            # Fallback to file path reference
+            img_tag = f'<img src="../{chart_file.name}" alt="{alt_text}" />'
+        
+        return f'''
+        <div class="chart-embed">
+            {img_tag}
+            {f'<div class="chart-embed-caption">{caption}</div>' if caption else ''}
+        </div>
+        '''
+    
     def _generate_header(
         self,
         title: str,
@@ -1541,6 +1591,8 @@ class ResearchReportGenerator:
         attention_data: Optional[Dict[str, Any]] = None,
         asr_metrics: Optional[Dict[str, Any]] = None,
         output_filename: Optional[str] = None,
+        charts_dir: Optional[str] = None,
+        ml_judge_config: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate complete research report.
@@ -1660,6 +1712,52 @@ class ResearchReportGenerator:
             avg_confidence=avg_confidence,
             layer_activations=layer_activations,
         )
+        
+        # Embed generated charts if charts_dir provided
+        if charts_dir:
+            charts_path = Path(charts_dir)
+            
+            # Subspace Analysis Chart
+            subspace_chart = charts_path / "subspace_analysis.png"
+            if subspace_chart.exists():
+                content += '''
+                <section class="section">
+                    <div class="section-header">
+                        <div class="section-icon">[CHART]</div>
+                        <h2>Subspace Analysis Visualization</h2>
+                    </div>
+                    <p class="section-description">
+                        PCA projection showing the separation between safe and harmful prompt representations
+                        in the model's internal activation space. Clear separation indicates the model has
+                        learned distinct representations for different prompt types.
+                    </p>
+                '''
+                content += self._embed_chart(
+                    str(subspace_chart),
+                    caption="Subspace analysis showing clean vs harmful prompt clustering in reduced dimensional space",
+                    alt_text="Subspace Analysis Chart"
+                )
+                content += '</section>'
+            
+            # ASR Chart
+            asr_chart = charts_path / "asr.png"
+            if asr_chart.exists():
+                content += '''
+                <section class="section">
+                    <div class="section-header">
+                        <div class="section-icon">[CHART]</div>
+                        <h2>Attack Success Rate Analysis</h2>
+                    </div>
+                    <p class="section-description">
+                        Visual breakdown of attack success rates across different attack categories and methods.
+                    </p>
+                '''
+                content += self._embed_chart(
+                    str(asr_chart),
+                    caption="Attack Success Rate breakdown by category and attack type",
+                    alt_text="ASR Chart"
+                )
+                content += '</section>'
         
         if probe_results:
             content += self._generate_probe_results(probe_results)

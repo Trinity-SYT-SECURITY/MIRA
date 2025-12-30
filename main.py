@@ -1251,6 +1251,7 @@ def main():
                     "successful": gradient_metrics.successful_attacks,
                     "avg_confidence": avg_confidence,
                 },
+                charts_dir=str(charts_dir),
             )
             print(f"    ✓ {html_path}")
         except Exception as e:
