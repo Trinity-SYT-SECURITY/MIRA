@@ -39,6 +39,9 @@
 git clone https://github.com/Trinity-SYT-SECURITY/MIRA.git
 cd MIRA
 
+# Activate pyenv virtual environment (if using pyenv)
+pyenv activate mira-venv
+
 # Install dependencies
 pip install -r requirements.txt
 
