@@ -21,7 +21,8 @@ class ModelManager:
     """
     
     def __init__(self):
-        self.project_root = Path(__file__).parent.parent
+        # Go up 3 levels: model_manager.py -> utils -> mira -> project_root
+        self.project_root = Path(__file__).parent.parent.parent
         self.config_file = self.project_root / ".mira_config.json"
         self.default_models_dir = self.project_root / "project" / "models"
         
