@@ -262,6 +262,46 @@ def run_complete_multi_model_pipeline():
         print("  Cancelled.")
         return
     
+    # ========================================
+    # Start Live Visualization Server
+    # ========================================
+    server = None
+    viz_port = 5001
+    
+    try:
+        from mira.visualization.live_server import LiveVisualizationServer
+        import socket
+        
+        # Find available port
+        def is_port_available(port):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('localhost', port))
+                    return True
+            except OSError:
+                return False
+        
+        for offset in range(10):
+            if is_port_available(5001 + offset):
+                viz_port = 5001 + offset
+                break
+        
+        print(f"\n  {'='*60}")
+        print(f"  STARTING LIVE VISUALIZATION")
+        print(f"  {'='*60}")
+        
+        server = LiveVisualizationServer(port=viz_port)
+        server.start(open_browser=True)
+        print(f"\n  🌐 Live Dashboard: http://localhost:{viz_port}")
+        print(f"  Browser opened automatically")
+        
+        import time
+        time.sleep(2)  # Let browser load
+        
+    except Exception as e:
+        print(f"\n  ⚠ Live visualization unavailable: {e}")
+        print(f"  Analysis will continue without live dashboard")
+    
     # Run analysis on each model
     all_results = []
     
@@ -313,8 +353,31 @@ def run_complete_multi_model_pipeline():
     print(f"    Entropy = Mean generation entropy (higher = more uncertain)")
     
     print(f"\n{'='*70}")
-    print("  Analysis complete. Individual reports saved to results/")
-    print(f"{'='*70}\n")
+    print("  Analysis complete!")
+    print(f"{'='*70}")
+    
+    # Send completion to live visualization
+    if server:
+        try:
+            # Send summary data
+            best_model = max(all_results, key=lambda x: x.get("asr", 0)) if all_results else None
+            server.send_complete({
+                "models_tested": len(all_results),
+                "best_asr": best_model.get("asr", 0) if best_model else 0,
+                "best_model": best_model.get("model_name", "N/A") if best_model else "N/A",
+            })
+        except:
+            pass
+        
+        print(f"\n  🌐 Live Dashboard still running at http://localhost:{viz_port}")
+        print(f"  Press Ctrl+C to exit")
+        
+        try:
+            import time
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n  Goodbye!")
 
 
 def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bool = True) -> dict:
