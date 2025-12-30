@@ -220,6 +220,42 @@ def run_complete_multi_model_pipeline():
     for m in models_to_test:
         print(f"    • {m}")
     
+    # Check and display Judge models
+    REQUIRED_JUDGES = [
+        ("distilbert-base-uncased-finetuned-sst-2-english", "DistilBERT (Attack Success Judge)"),
+        ("unitary/toxic-bert", "Toxic-BERT (Content Safety Judge)"),
+    ]
+    
+    all_downloaded = manager.list_downloaded_models()
+    
+    print(f"\n  {'='*60}")
+    print(f"  JUDGE MODELS (for attack evaluation)")
+    print(f"  {'='*60}")
+    
+    missing_judges = []
+    for judge_name, judge_desc in REQUIRED_JUDGES:
+        if judge_name in all_downloaded or judge_name.replace("/", "--") in str(all_downloaded):
+            print(f"    ✓ {judge_desc}")
+        else:
+            print(f"    ✗ {judge_desc} (NOT DOWNLOADED)")
+            missing_judges.append(judge_name)
+    
+    if missing_judges:
+        print(f"\n  ⚠ Some judge models are missing!")
+        print(f"    Run Mode 5 to download judge models.")
+        proceed = input("\n  Continue without full judge evaluation? (y/n): ").strip().lower()
+        if proceed != 'y':
+            print("  Cancelled. Please download judge models first.")
+            return
+    
+    # Explain metrics
+    print(f"\n  {'='*60}")
+    print(f"  METRICS EXPLANATION")
+    print(f"  {'='*60}")
+    print(f"    ASR = Attack Success Rate (攻擊成功率)")
+    print(f"        = Successful Attacks / Total Attacks × 100%")
+    print(f"    Higher ASR = Model is more vulnerable to attacks")
+    
     print()
     confirm = input("  Continue? (y/n, default=y): ").strip().lower()
     if confirm == 'n':
