@@ -19,13 +19,54 @@ JUDGE_MODELS = [
 def run_model_downloader():
     """Run model downloader mode."""
     from mira.utils.model_manager import get_model_manager
+    from pathlib import Path
+    import os
     
     print("\n" + "="*70)
     print("  MODEL DOWNLOADER")
     print("="*70)
     
-    # Get already downloaded models
+    # Get model manager
     manager = get_model_manager()
+    
+    # Ask where to save models
+    print("""
+  Where would you like to save models?
+  
+    [1] Project directory (default) → project/models/
+    [2] HuggingFace cache           → ~/.cache/huggingface/
+    [3] Custom directory            → Specify your own path
+    """)
+    
+    try:
+        location = input("  Select location (1-3, default=1): ").strip()
+        if location == "":
+            location = "1"
+    except:
+        location = "1"
+    
+    # Set download directory
+    if location == "1":
+        download_dir = manager.models_dir
+        print(f"\n  → Models will be saved to: {download_dir}")
+    elif location == "2":
+        download_dir = Path.home() / ".cache" / "huggingface" / "hub"
+        os.environ["HF_HOME"] = str(Path.home() / ".cache" / "huggingface")
+        print(f"\n  → Models will be saved to HuggingFace cache")
+    elif location == "3":
+        custom_path = input("\n  Enter custom directory path: ").strip()
+        if custom_path:
+            download_dir = Path(custom_path)
+            download_dir.mkdir(parents=True, exist_ok=True)
+            print(f"\n  → Models will be saved to: {download_dir}")
+        else:
+            download_dir = manager.models_dir
+            print(f"\n  → Using default: {download_dir}")
+    else:
+        download_dir = manager.models_dir
+        print(f"\n  → Using default: {download_dir}")
+    
+    # Get already downloaded models
     downloaded = manager.list_downloaded_models()
     
     # Choose category
@@ -47,16 +88,18 @@ def run_model_downloader():
     print()
     
     if category == "1":
-        download_attack_models(downloaded, manager)
+        download_attack_models(downloaded, manager, download_dir)
     elif category == "2":
-        download_judge_models(downloaded, manager)
+        download_judge_models(downloaded, manager, download_dir)
     elif category == "3":
-        download_attack_models(downloaded, manager)
-        download_judge_models(downloaded, manager)
+        download_attack_models(downloaded, manager, download_dir)
+        download_judge_models(downloaded, manager, download_dir)
 
 
-def download_attack_models(downloaded, manager):
+def download_attack_models(downloaded, manager, download_dir=None):
     """Download attack models with selection interface."""
+    if download_dir is None:
+        download_dir = manager.models_dir
     print("  " + "="*60)
     print("  ATTACK MODELS (for security testing)")
     print("  " + "="*60 + "\n")
@@ -123,8 +166,10 @@ def download_attack_models(downloaded, manager):
     print(f"\n  ✓ Attack models download complete")
 
 
-def download_judge_models(downloaded, manager):
+def download_judge_models(downloaded, manager, download_dir=None):
     """Download judge/evaluation models."""
+    if download_dir is None:
+        download_dir = manager.models_dir
     print("\n  " + "="*60)
     print("  JUDGE MODELS (for attack evaluation)")
     print("  " + "="*60 + "\n")
