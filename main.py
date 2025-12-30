@@ -1212,6 +1212,73 @@ def main():
         except Exception as e:
             print(f"    ML Judge failed: {e}")
     
+    # Advanced Mechanistic Analysis (if available)
+    logit_lens_results = []
+    uncertainty_results = []
+    
+    if ADVANCED_ANALYSIS_AVAILABLE and attack_results:
+        print("\n  Running advanced mechanistic analysis...")
+        print("    → Logit Lens (prediction evolution)")
+        print("    → Uncertainty tracking (risk detection)")
+        
+        try:
+            # Initialize analyzers
+            logit_projector = LogitProjector(model.model, model.tokenizer)
+            
+            # Analyze successful attacks (limit to first 3 for performance)
+            successful_attacks = [r for r in attack_results if r.get("success", False)]
+            analysis_count = min(3, len(successful_attacks))
+            
+            if analysis_count > 0:
+                print(f"    Analyzing {analysis_count} successful attacks...")
+                
+                for i, result in enumerate(successful_attacks[:analysis_count]):
+                    prompt = result["prompt"]
+                    adv_suffix = result.get("adversarial_suffix", "")
+                    
+                    if adv_suffix:
+                        # Run Logit Lens on clean prompt
+                        clean_trajectory = run_logit_lens_analysis(
+                            model.model, model.tokenizer, prompt
+                        )
+                        
+                        # Run Logit Lens on adversarial prompt
+                        adv_prompt = prompt + " " + adv_suffix
+                        adv_trajectory = run_logit_lens_analysis(
+                            model.model, model.tokenizer, adv_prompt
+                        )
+                        
+                        # Run Uncertainty analysis
+                        uncertainty_result = analyze_generation_uncertainty(
+                            model.model, model.tokenizer, adv_prompt, max_tokens=20
+                        )
+                        
+                        # Store results
+                        logit_lens_results.append({
+                            "prompt": prompt,
+                            "clean_trajectory": clean_trajectory,
+                            "adversarial_trajectory": adv_trajectory,
+                        })
+                        
+                        uncertainty_results.append({
+                            "prompt": prompt,
+                            "risk_level": uncertainty_result["risk"]["risk_level"],
+                            "risk_score": uncertainty_result["risk"]["risk_score"],
+                            "mean_entropy": uncertainty_result["metrics"]["mean_entropy"],
+                        })
+                
+                print(f"    ✓ Advanced analysis complete")
+                if uncertainty_results:
+                    avg_risk = sum(r["risk_score"] for r in uncertainty_results) / len(uncertainty_results)
+                    print(f"    Average risk score: {avg_risk:.2f}")
+            else:
+                print("    No successful attacks to analyze")
+                
+        except Exception as e:
+            print(f"    Advanced analysis failed: {e}")
+            logit_lens_results = []
+            uncertainty_results = []
+    
     print(f"""
   ┌─────────────────────────────────────────────────────────────┐
   │ GRADIENT ATTACK RESULTS                                     │
