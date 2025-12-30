@@ -11,6 +11,8 @@ torchvision
 matplotlib>=3.7.0
 plotly>=5.15.0
 seaborn>=0.12.0
+accelerate
+optimum
 
 # Data & Utilities
 pandas>=2.0.0

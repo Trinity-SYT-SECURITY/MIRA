@@ -1,333 +1,357 @@
 """
-Logit lens analysis for layer-wise prediction inspection.
+Logit projection analysis for visualizing prediction formation across layers.
 
-This module implements the "logit lens" technique for:
-- Projecting intermediate layer states to vocabulary space
-- Tracking how predictions evolve across layers
-- Identifying where safety decisions emerge
-- Analyzing prediction uncertainty at each layer
+Projects intermediate layer hidden states to vocabulary space to track
+how model predictions evolve from input to output.
 """
 
-from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
+from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
 import numpy as np
+
+from ..core.hooks import ActivationHookManager, ActivationCache, get_unembedding_matrix
 
 
 @dataclass
 class LayerPrediction:
-    """Prediction information at a specific layer."""
+    """Prediction state at a single layer."""
     layer_idx: int
-    top_tokens: List[str]
+    top_tokens: List[int]
     top_probs: List[float]
-    target_prob: Optional[float]
     entropy: float
-    confidence: float
+    max_prob: float
+    logits: Optional[torch.Tensor] = None
 
 
 @dataclass
 class PredictionTrajectory:
-    """How prediction evolves across layers."""
-    token_position: int
+    """Full prediction trajectory across all layers."""
+    input_text: str
     layer_predictions: List[LayerPrediction]
-    emergence_layer: Optional[int]  # Where final prediction first appears in top-k
-    stability_score: float  # How stable is the prediction across layers
+    final_prediction: LayerPrediction
+    
+    def get_token_probability_curve(self, token_id: int) -> List[float]:
+        """Get probability of specific token across all layers."""
+        curve = []
+        for lp in self.layer_predictions:
+            if token_id in lp.top_tokens:
+                idx = lp.top_tokens.index(token_id)
+                curve.append(lp.top_probs[idx])
+            else:
+                curve.append(0.0)
+        return curve
+    
+    def find_transition_layer(self, threshold: float = 0.5) -> Optional[int]:
+        """Find layer where top prediction probability exceeds threshold."""
+        for lp in self.layer_predictions:
+            if lp.max_prob >= threshold:
+                return lp.layer_idx
+        return None
 
 
-class LogitLens:
+class LogitProjector:
     """
-    Logit lens for analyzing layer-by-layer predictions.
+    Projects hidden states to vocabulary logits at any layer.
     
-    Enables inspection of:
-    - What each layer "thinks" the next token should be
-    - Where refusal/acceptance decisions emerge
-    - How attacks change the prediction trajectory
+    Enables visualization of how predictions form across layers,
+    useful for understanding where attacks succeed in changing model behavior.
     """
     
-    def __init__(self, model_wrapper):
-        """
-        Initialize logit lens.
+    def __init__(
+        self, 
+        model: nn.Module,
+        tokenizer: Any = None,
+        use_tuned_transforms: bool = False
+    ):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = next(model.parameters()).device
         
-        Args:
-            model_wrapper: ModelWrapper instance
-        """
-        self.model = model_wrapper
+        # Get unembedding matrix
+        self.unembed = get_unembedding_matrix(model)
+        self.vocab_size = self.unembed.shape[0]
+        
+        # Optional layer-specific transforms
+        self.tuned_transforms: Dict[int, nn.Linear] = {}
+        self.use_tuned = use_tuned_transforms
+        
+        # Layer normalization (if exists)
+        self.final_ln = self._get_final_layernorm()
     
-    def project_layer_to_vocab(
+    def _get_final_layernorm(self) -> Optional[nn.Module]:
+        """Get final layer normalization module."""
+        if hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'ln_f'):
+            return self.model.transformer.ln_f
+        elif hasattr(self.model, 'model') and hasattr(self.model.model, 'norm'):
+            return self.model.model.norm
+        elif hasattr(self.model, 'gpt_neox') and hasattr(self.model.gpt_neox, 'final_layer_norm'):
+            return self.model.gpt_neox.final_layer_norm
+        return None
+    
+    def project_to_vocab(
         self,
         hidden_state: torch.Tensor,
-        apply_norm: bool = True,
+        layer_idx: int = -1,
+        apply_ln: bool = True,
+        temperature: float = 1.0
     ) -> torch.Tensor:
         """
         Project hidden state to vocabulary logits.
         
         Args:
-            hidden_state: Hidden state tensor
-            apply_norm: Whether to apply layer normalization first
+            hidden_state: Hidden state tensor [batch, seq_len, hidden_dim]
+            layer_idx: Which layer this came from (-1 for final)
+            apply_ln: Whether to apply layer normalization
+            temperature: Temperature for softmax
             
         Returns:
-            Logits over vocabulary
+            Logits tensor [batch, seq_len, vocab_size]
         """
-        return self.model.unembed(hidden_state)
+        h = hidden_state.to(self.device)
+        
+        # Apply tuned transform if available
+        if self.use_tuned and layer_idx in self.tuned_transforms:
+            h = self.tuned_transforms[layer_idx](h)
+        
+        # Apply layer normalization
+        if apply_ln and self.final_ln is not None:
+            h = self.final_ln(h)
+        
+        # Project to vocabulary
+        logits = h @ self.unembed.T
+        
+        if temperature != 1.0:
+            logits = logits / temperature
+        
+        return logits
     
-    def get_layer_predictions(
+    def get_layer_prediction(
         self,
-        text: str,
-        token_position: int = -1,
-        top_k: int = 10,
-        target_tokens: Optional[List[str]] = None,
-    ) -> List[LayerPrediction]:
+        hidden_state: torch.Tensor,
+        layer_idx: int,
+        position: int = -1,
+        top_k: int = 10
+    ) -> LayerPrediction:
         """
-        Get predictions at each layer for a specific token position.
+        Get prediction at specific layer for specific position.
         
         Args:
-            text: Input text
-            token_position: Which token position to analyze (-1 for last)
-            top_k: Number of top predictions to return
-            target_tokens: Specific tokens to track probability of
+            hidden_state: Hidden state from layer
+            layer_idx: Layer index
+            position: Token position (-1 for last)
+            top_k: Number of top tokens to return
             
         Returns:
-            List of LayerPrediction for each layer
+            LayerPrediction with top tokens and probabilities
         """
-        _, cache = self.model.run_with_cache(text)
+        logits = self.project_to_vocab(hidden_state, layer_idx)
         
-        predictions = []
-        target_ids = None
+        # Get logits for specific position
+        if position == -1:
+            pos_logits = logits[0, -1, :]
+        else:
+            pos_logits = logits[0, position, :]
         
-        if target_tokens:
-            target_ids = [
-                self.model.tokenizer.encode(t, add_special_tokens=False)[0]
-                for t in target_tokens
-            ]
+        probs = F.softmax(pos_logits, dim=-1)
         
-        for layer_idx in range(self.model.n_layers):
-            hidden = cache.hidden_states.get(layer_idx)
-            if hidden is None:
-                continue
-            
-            # Get hidden state at specified position
-            pos_hidden = hidden[0, token_position, :].unsqueeze(0)
-            
-            # Project to vocabulary
-            logits = self.project_layer_to_vocab(pos_hidden)
-            probs = F.softmax(logits, dim=-1)[0]
-            
-            # Get top-k predictions
-            top_probs, top_indices = probs.topk(top_k)
-            top_tokens = [
-                self.model.tokenizer.decode([idx])
-                for idx in top_indices.tolist()
-            ]
-            
-            # Compute entropy
-            entropy = float(-(probs * (probs + 1e-10).log()).sum())
-            
-            # Confidence: probability of top token
-            confidence = float(top_probs[0])
-            
-            # Target token probability
-            target_prob = None
-            if target_ids:
-                target_probs = [float(probs[tid]) for tid in target_ids]
-                target_prob = max(target_probs)
-            
-            predictions.append(LayerPrediction(
-                layer_idx=layer_idx,
-                top_tokens=top_tokens,
-                top_probs=[float(p) for p in top_probs.tolist()],
-                target_prob=target_prob,
-                entropy=entropy,
-                confidence=confidence,
-            ))
+        # Get top-k
+        top_probs, top_indices = torch.topk(probs, k=min(top_k, len(probs)))
         
-        return predictions
+        # Compute entropy
+        entropy = -torch.sum(probs * torch.log(probs + 1e-10)).item()
+        
+        return LayerPrediction(
+            layer_idx=layer_idx,
+            top_tokens=top_indices.tolist(),
+            top_probs=top_probs.tolist(),
+            entropy=entropy,
+            max_prob=top_probs[0].item(),
+            logits=pos_logits.detach(),
+        )
     
-    def track_prediction_trajectory(
+    def analyze_trajectory(
         self,
-        text: str,
-        token_position: int = -1,
-        top_k: int = 5,
+        input_ids: torch.Tensor,
+        activations: ActivationCache,
+        position: int = -1,
+        top_k: int = 10
     ) -> PredictionTrajectory:
         """
-        Track how prediction evolves across layers.
-        
-        Useful for identifying where safety decisions emerge.
+        Analyze prediction trajectory across all layers.
         
         Args:
-            text: Input text
-            token_position: Token position to track
-            top_k: Consider top-k predictions for emergence detection
+            input_ids: Input token IDs
+            activations: Cached activations from forward pass
+            position: Token position to analyze
+            top_k: Number of top tokens per layer
             
         Returns:
-            PredictionTrajectory with layer-by-layer analysis
+            PredictionTrajectory with per-layer predictions
         """
-        predictions = self.get_layer_predictions(text, token_position, top_k)
-        
-        if not predictions:
-            raise ValueError("No predictions collected")
-        
-        # Get final prediction
-        final_pred = predictions[-1].top_tokens[0] if predictions else None
-        
-        # Find emergence layer (where final prediction first appears in top-k)
-        emergence_layer = None
-        for pred in predictions:
-            if final_pred in pred.top_tokens:
-                emergence_layer = pred.layer_idx
-                break
-        
-        # Compute stability score (how consistent is top prediction across layers)
-        if len(predictions) > 1:
-            top_tokens = [p.top_tokens[0] for p in predictions]
-            unique_tops = len(set(top_tokens))
-            stability_score = 1.0 - (unique_tops - 1) / len(predictions)
+        # Decode input text
+        if self.tokenizer:
+            input_text = self.tokenizer.decode(input_ids[0])
         else:
-            stability_score = 1.0
+            input_text = f"[{len(input_ids[0])} tokens]"
+        
+        layer_predictions = []
+        
+        # Process each layer's residual stream
+        for layer_idx in sorted(activations.residual.keys()):
+            hidden = activations.residual[layer_idx]
+            pred = self.get_layer_prediction(hidden, layer_idx, position, top_k)
+            layer_predictions.append(pred)
+        
+        # Final prediction (from last layer)
+        final_pred = layer_predictions[-1] if layer_predictions else None
         
         return PredictionTrajectory(
-            token_position=token_position,
-            layer_predictions=predictions,
-            emergence_layer=emergence_layer,
-            stability_score=stability_score,
+            input_text=input_text,
+            layer_predictions=layer_predictions,
+            final_prediction=final_pred,
         )
     
     def compare_trajectories(
         self,
-        text1: str,
-        text2: str,
-        token_position: int = -1,
-    ) -> Dict[str, any]:
+        clean_trajectory: PredictionTrajectory,
+        attack_trajectory: PredictionTrajectory
+    ) -> Dict[str, Any]:
         """
-        Compare prediction trajectories between two inputs.
+        Compare prediction trajectories between clean and attack inputs.
         
-        Useful for understanding how attacks change internal predictions.
-        
-        Args:
-            text1: First input
-            text2: Second input
-            token_position: Token position to compare
-            
-        Returns:
-            Dictionary with comparison metrics
+        Returns dict with:
+        - divergence_layer: First layer where predictions differ significantly
+        - entropy_changes: Per-layer entropy differences
+        - prediction_changes: Where top prediction changes
         """
-        traj1 = self.track_prediction_trajectory(text1, token_position)
-        traj2 = self.track_prediction_trajectory(text2, token_position)
+        divergence_layer = None
+        entropy_changes = []
+        prediction_changes = []
         
-        # Compare emergence layers
-        emergence_diff = None
-        if traj1.emergence_layer is not None and traj2.emergence_layer is not None:
-            emergence_diff = traj2.emergence_layer - traj1.emergence_layer
-        
-        # Compare layer-by-layer predictions
-        divergence_layers = []
-        for pred1, pred2 in zip(traj1.layer_predictions, traj2.layer_predictions):
-            if pred1.top_tokens[0] != pred2.top_tokens[0]:
-                divergence_layers.append(pred1.layer_idx)
-        
-        # Find first divergence
-        first_divergence = divergence_layers[0] if divergence_layers else None
-        
-        return {
-            "trajectory1": traj1,
-            "trajectory2": traj2,
-            "emergence_diff": emergence_diff,
-            "divergence_layers": divergence_layers,
-            "first_divergence": first_divergence,
-            "stability_diff": traj2.stability_score - traj1.stability_score,
-        }
-    
-    def find_refusal_emergence(
-        self,
-        harmful_texts: List[str],
-        refusal_tokens: List[str] = None,
-    ) -> Dict[str, float]:
-        """
-        Find at which layer refusal behavior typically emerges.
-        
-        Args:
-            harmful_texts: List of harmful prompts that trigger refusal
-            refusal_tokens: Tokens that indicate refusal (default: common refusals)
-            
-        Returns:
-            Dictionary with emergence statistics
-        """
-        if refusal_tokens is None:
-            refusal_tokens = ["I", "Sorry", "cannot", "can't", "won't", "As"]
-        
-        emergence_layers = []
-        
-        for text in harmful_texts:
-            predictions = self.get_layer_predictions(text, -1, top_k=10)
-            
-            for pred in predictions:
-                # Check if any refusal token appears in top predictions
-                for refusal_tok in refusal_tokens:
-                    if any(refusal_tok.lower() in t.lower() for t in pred.top_tokens):
-                        emergence_layers.append(pred.layer_idx)
-                        break
-                else:
-                    continue
-                break
-        
-        if not emergence_layers:
-            return {"mean_layer": None, "std_layer": None, "samples": 0}
-        
-        return {
-            "mean_layer": np.mean(emergence_layers),
-            "std_layer": np.std(emergence_layers),
-            "min_layer": min(emergence_layers),
-            "max_layer": max(emergence_layers),
-            "samples": len(emergence_layers),
-        }
-    
-    def layer_contribution_to_prediction(
-        self,
-        text: str,
-        token_position: int = -1,
-    ) -> List[Dict[str, float]]:
-        """
-        Measure each layer's contribution to the final prediction.
-        
-        Uses difference in target token probability between consecutive layers.
-        
-        Args:
-            text: Input text
-            token_position: Token position to analyze
-            
-        Returns:
-            List of contribution info for each layer
-        """
-        predictions = self.get_layer_predictions(text, token_position, top_k=50)
-        
-        if len(predictions) < 2:
-            return []
-        
-        # Get final top token
-        final_token = predictions[-1].top_tokens[0]
-        final_token_id = self.model.tokenizer.encode(
-            final_token, add_special_tokens=False
-        )[0]
-        
-        # Recompute with target token tracking
-        predictions_with_target = self.get_layer_predictions(
-            text, token_position, top_k=50, target_tokens=[final_token]
+        n_layers = min(
+            len(clean_trajectory.layer_predictions),
+            len(attack_trajectory.layer_predictions)
         )
         
-        contributions = []
-        prev_prob = 0.0
-        
-        for pred in predictions_with_target:
-            curr_prob = pred.target_prob or 0.0
-            contribution = curr_prob - prev_prob
+        for i in range(n_layers):
+            clean_pred = clean_trajectory.layer_predictions[i]
+            attack_pred = attack_trajectory.layer_predictions[i]
             
-            contributions.append({
-                "layer_idx": pred.layer_idx,
-                "target_prob": curr_prob,
-                "contribution": contribution,
-                "entropy": pred.entropy,
-            })
+            # Track entropy change
+            entropy_diff = attack_pred.entropy - clean_pred.entropy
+            entropy_changes.append(entropy_diff)
             
-            prev_prob = curr_prob
+            # Check if top prediction changed
+            clean_top = clean_pred.top_tokens[0] if clean_pred.top_tokens else -1
+            attack_top = attack_pred.top_tokens[0] if attack_pred.top_tokens else -1
+            
+            if clean_top != attack_top:
+                prediction_changes.append(i)
+                if divergence_layer is None:
+                    divergence_layer = i
         
-        return contributions
+        return {
+            "divergence_layer": divergence_layer,
+            "entropy_changes": entropy_changes,
+            "prediction_changes": prediction_changes,
+            "clean_final_entropy": clean_trajectory.final_prediction.entropy if clean_trajectory.final_prediction else 0,
+            "attack_final_entropy": attack_trajectory.final_prediction.entropy if attack_trajectory.final_prediction else 0,
+        }
+
+
+class LogitLensVisualizer:
+    """Visualization utilities for logit projections."""
+    
+    def __init__(self, projector: LogitProjector):
+        self.projector = projector
+    
+    def format_trajectory_table(
+        self,
+        trajectory: PredictionTrajectory,
+        show_n: int = 5
+    ) -> str:
+        """Format trajectory as text table."""
+        lines = [
+            f"Input: {trajectory.input_text[:50]}...",
+            "-" * 60,
+            f"{'Layer':<8} {'Top Token':<20} {'Prob':>8} {'Entropy':>10}",
+            "-" * 60,
+        ]
+        
+        for lp in trajectory.layer_predictions:
+            if self.projector.tokenizer and lp.top_tokens:
+                top_token = self.projector.tokenizer.decode([lp.top_tokens[0]])
+            else:
+                top_token = str(lp.top_tokens[0]) if lp.top_tokens else "N/A"
+            
+            lines.append(
+                f"{lp.layer_idx:<8} {top_token:<20} {lp.max_prob:>8.3f} {lp.entropy:>10.3f}"
+            )
+        
+        return "\n".join(lines)
+    
+    def get_trajectory_data(
+        self,
+        trajectory: PredictionTrajectory
+    ) -> Dict[str, List]:
+        """Extract trajectory data for plotting."""
+        layers = []
+        entropies = []
+        max_probs = []
+        top_tokens = []
+        
+        for lp in trajectory.layer_predictions:
+            layers.append(lp.layer_idx)
+            entropies.append(lp.entropy)
+            max_probs.append(lp.max_prob)
+            if self.projector.tokenizer and lp.top_tokens:
+                top_tokens.append(self.projector.tokenizer.decode([lp.top_tokens[0]]))
+            else:
+                top_tokens.append(str(lp.top_tokens[0]) if lp.top_tokens else "")
+        
+        return {
+            "layers": layers,
+            "entropies": entropies,
+            "max_probs": max_probs,
+            "top_tokens": top_tokens,
+        }
+
+
+def run_logit_lens_analysis(
+    model: nn.Module,
+    tokenizer: Any,
+    text: str,
+    hook_manager: Optional[ActivationHookManager] = None
+) -> PredictionTrajectory:
+    """
+    Run complete logit lens analysis on input text.
+    
+    Args:
+        model: The transformer model
+        tokenizer: Model tokenizer
+        text: Input text to analyze
+        hook_manager: Optional pre-configured hook manager
+        
+    Returns:
+        PredictionTrajectory for the input
+    """
+    # Create hook manager if not provided
+    if hook_manager is None:
+        hook_manager = ActivationHookManager(model)
+        hook_manager.register_all_layers(["residual"])
+    
+    # Tokenize
+    input_ids = tokenizer.encode(text, return_tensors="pt")
+    input_ids = input_ids.to(next(model.parameters()).device)
+    
+    # Run with cache
+    logits, cache = hook_manager.run_with_cache(input_ids)
+    
+    # Create projector and analyze
+    projector = LogitProjector(model, tokenizer)
+    trajectory = projector.analyze_trajectory(input_ids, cache)
+    
+    return trajectory

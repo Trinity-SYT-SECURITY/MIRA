@@ -168,17 +168,29 @@ def main():
 """)
         try:
             choice = input("  Your choice: ").strip()
-            if choice == "" or choice == "2":
+            
+            # Handle direct number input or menu choice
+            if choice.isdigit():
+                num = int(choice)
+                # Direct number input (e.g., "50", "100")
+                if num > 5:
+                    num_attacks = num
+                # Menu choices 1-5
+                elif num == 1:
+                    num_attacks = 5
+                elif num == 2 or num == 0:
+                    num_attacks = 10
+                elif num == 3:
+                    num_attacks = 20
+                elif num == 4:
+                    num_attacks = 50
+                elif num == 5:
+                    custom = input("  Enter custom number: ").strip()
+                    num_attacks = int(custom) if custom.isdigit() else 10
+                else:
+                    num_attacks = 10
+            elif choice == "":
                 num_attacks = 10
-            elif choice == "1":
-                num_attacks = 5
-            elif choice == "3":
-                num_attacks = 20
-            elif choice == "4":
-                num_attacks = 50
-            elif choice == "5":
-                custom = input("  Enter custom number: ").strip()
-                num_attacks = int(custom) if custom.isdigit() else 10
             else:
                 num_attacks = 10
         except:
