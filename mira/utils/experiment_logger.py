@@ -24,7 +24,8 @@ class ExperimentRecord:
     prompt: str
     attack_type: Optional[str]
     suffix: Optional[str]
-    response: Optional[str]
+    response: Optional[str]  # Full response (prompt + suffix + generated)
+    generated_text: Optional[str]  # Only the model-generated part
     success: Optional[bool]
     metrics: Dict[str, float]
     layer_data: Optional[Dict[str, Any]]
@@ -89,12 +90,27 @@ class ExperimentLogger:
             prompt: Original prompt
             attack_type: Type of attack used
             suffix: Adversarial suffix
-            response: Model response
+            response: Full model response (includes prompt + suffix + generated)
             success: Whether attack succeeded
             metrics: Dictionary of metric values
             layer_data: Optional layer-wise activation data
             attention_data: Optional attention pattern data
         """
+        # Extract generated text (remove prompt and suffix from response)
+        generated_text = None
+        if response:
+            # Calculate the expected prefix length
+            prefix = prompt
+            if suffix:
+                prefix = prompt + " " + suffix
+            
+            # Remove prefix to get only generated text
+            if response.startswith(prefix):
+                generated_text = response[len(prefix):].strip()
+            else:
+                # Fallback: just use the response as-is if prefix doesn't match
+                generated_text = response
+        
         record = ExperimentRecord(
             timestamp=datetime.now().isoformat(),
             experiment_id=f"{self.experiment_name}_{len(self.records)}",
@@ -102,7 +118,8 @@ class ExperimentLogger:
             prompt=prompt,
             attack_type=attack_type,
             suffix=suffix,
-            response=response[:500] if response else None,  # Truncate long responses
+            response=response[:500] if response else None,  # Full response (truncated)
+            generated_text=generated_text[:500] if generated_text else None,  # Only generated part
             success=success,
             metrics=metrics,
             layer_data=layer_data,
