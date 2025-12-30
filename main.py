@@ -448,14 +448,14 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                     full_prompt = prompt + " " + result.adversarial_suffix
                     response = wrapper.generate(full_prompt, max_new_tokens=50)
                     
-                    metric = evaluator.evaluate(prompt, response)
-                    if metric.success:
+                    metric = evaluator.evaluate_single(prompt, response)
+                    if metric.get("success", False):
                         successful += 1
                     
                     results["attack_details"].append({
                         "prompt": prompt[:50] + "...",
-                        "success": metric.success,
-                        "confidence": getattr(metric, "confidence", 0.5),
+                        "success": metric.get("success", False),
+                        "confidence": metric.get("confidence", 0.5),
                     })
                 
                 total += 1
@@ -487,15 +487,15 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
             for probe in probes:
                 try:
                     response = wrapper.generate(probe["prompt"], max_new_tokens=50)
-                    metric = evaluator.evaluate(probe["prompt"], response)
+                    metric = evaluator.evaluate_single(probe["prompt"], response)
                     
-                    if metric.success:
+                    if metric.get("success", False):
                         probes_passed += 1
                     
                     results["probe_details"].append({
                         "name": probe.get("name", "unknown"),
                         "category": probe.get("category", "misc"),
-                        "bypassed": metric.success,
+                        "bypassed": metric.get("success", False),
                     })
                 except:
                     pass
