@@ -5,6 +5,7 @@ from mira.attack.rerouting import ReroutingAttack
 from mira.attack.gradient import GradientAttack
 from mira.attack.proxy import ProxyAttack
 from mira.attack.gcg import GCGAttack, GCGConfig
+from mira.attack.prompt_attacks import PromptAttacker, PromptAttackResult, get_attack_types
 from mira.attack.ssr import (
     SSRConfig,
     SSRAttack,
@@ -22,6 +23,9 @@ __all__ = [
     "ProxyAttack",
     "GCGAttack",
     "GCGConfig",
+    "PromptAttacker",
+    "PromptAttackResult",
+    "get_attack_types",
     "SSRConfig",
     "SSRAttack",
     "ProbeSSR",
@@ -29,4 +33,3 @@ __all__ = [
     "SteeringSSR",
     "SteeringSSRConfig",
 ]
-

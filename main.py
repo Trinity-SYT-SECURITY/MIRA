@@ -216,6 +216,38 @@ def run_complete_multi_model_pipeline():
     except:
         num_attacks = 5
     
+    # Select attack type
+    print(f"""
+  ============================================================
+  SELECT ATTACK TYPE
+  ============================================================
+    [1] Prompt-Based (Recommended) - Readable responses
+        → DAN jailbreaks, encoding, roleplay, social engineering
+    
+    [2] Gradient (GCG) - Adversarial suffix optimization
+        → Produces garbage-like suffixes but may bypass filters
+    
+    [3] Both - Comprehensive testing (slower)
+  """)
+    
+    try:
+        attack_choice = input("  Select attack type (1-3, default=1): ").strip()
+        if attack_choice == "2":
+            attack_mode = "gradient"
+        elif attack_choice == "3":
+            attack_mode = "both"
+        else:
+            attack_mode = "prompt"
+    except:
+        attack_mode = "prompt"
+    
+    attack_desc = {
+        "prompt": "Prompt-Based",
+        "gradient": "Gradient (GCG)", 
+        "both": "Both Types"
+    }
+    print(f"\n  ✓ Attack type: {attack_desc[attack_mode]}")
+    
     print(f"\n  Will analyze {len(models_to_test)} models with {num_attacks} attacks each:")
     for m in models_to_test:
         print(f"    • {m}")
@@ -312,7 +344,7 @@ def run_complete_multi_model_pipeline():
         
         try:
             # Run complete analysis for each model
-            result = run_single_model_analysis(model_name, num_attacks)
+            result = run_single_model_analysis(model_name, num_attacks, attack_mode=attack_mode)
             all_results.append({
                 "model_name": model_name,
                 "success": True,
@@ -380,12 +412,18 @@ def run_complete_multi_model_pipeline():
             print("\n  Goodbye!")
 
 
-def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bool = True) -> dict:
+def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bool = True, attack_mode: str = "prompt") -> dict:
     """
     Run complete analysis on a single model.
     
+    Args:
+        model_name: Name of model to analyze
+        num_attacks: Number of attacks to run
+        verbose: Print progress
+        attack_mode: "prompt" (readable), "gradient" (GCG), or "both"
+    
     Includes:
-    - Gradient attacks with ASR calculation
+    - Prompt-based OR gradient attacks with ASR calculation
     - Security probe testing
     - Logit Lens analysis (sample)
     - Uncertainty tracking
@@ -395,7 +433,7 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
     """
     from mira.utils.model_manager import get_model_manager
     from mira.utils.data import load_harmful_prompts
-    from mira.attack import GradientAttack
+    from mira.attack import GradientAttack, PromptAttacker
     from mira.attack.probes import get_security_probes
     from mira.metrics import AttackSuccessEvaluator
     from mira.core.model_wrapper import ModelWrapper
@@ -413,6 +451,7 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
         "logit_lens_sample": None,
         "attack_details": [],
         "probe_details": [],
+        "attack_mode": attack_mode,
     }
     
     try:
@@ -431,60 +470,134 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
         evaluator = AttackSuccessEvaluator()
         
         # ========================================
-        # Phase 1: Gradient Attacks
+        # Phase 1: Attacks (based on attack_mode)
         # ========================================
-        if verbose:
-            print(f"    Phase 1: Gradient attacks ({num_attacks} attacks)...")
-        
-        attack = GradientAttack(model, tokenizer)
         successful = 0
         total = 0
         
-        for i, prompt in enumerate(harmful_prompts):
-            # Show progress
+        if attack_mode in ["prompt", "both"]:
+            # Prompt-based attacks
             if verbose:
-                progress = f"[{i+1}/{len(harmful_prompts)}]"
-                bar_len = 20
-                filled = int(bar_len * (i + 1) / len(harmful_prompts))
-                bar = "█" * filled + "░" * (bar_len - filled)
-                print(f"\r      {bar} {progress} Attacking...", end="", flush=True)
+                print(f"    Phase 1a: Prompt-based attacks ({num_attacks} attacks)...")
             
-            try:
-                result = attack.attack(prompt, max_steps=50)
+            prompt_attacker = PromptAttacker(model, tokenizer)
+            
+            for i, prompt in enumerate(harmful_prompts):
+                # Show progress
+                if verbose:
+                    progress = f"[{i+1}/{len(harmful_prompts)}]"
+                    bar_len = 20
+                    filled = int(bar_len * (i + 1) / len(harmful_prompts))
+                    bar = "█" * filled + "░" * (bar_len - filled)
+                    print(f"\r      {bar} {progress} Prompt attack...", end="", flush=True)
                 
-                if result.adversarial_suffix:
-                    full_prompt = prompt + " " + result.adversarial_suffix
-                    response = wrapper.generate(full_prompt, max_new_tokens=50)
+                try:
+                    # Try different attack types
+                    attack_types = ["dan", "roleplay", "social", "logic"]
+                    best_result = None
                     
-                    metric = evaluator.evaluate_single(prompt, response)
-                    if metric.get("success", False):
-                        successful += 1
+                    for attack_type in attack_types[:2]:  # Limit for speed
+                        attack_result = prompt_attacker.attack(prompt, attack_type, max_new_tokens=100)
+                        
+                        if attack_result.response:
+                            metric = evaluator.evaluate_single(prompt, attack_result.response)
+                            attack_result.success = metric.get("success", False)
+                            
+                            if attack_result.success:
+                                best_result = attack_result
+                                break
+                        
+                        if best_result is None:
+                            best_result = attack_result
                     
+                    if best_result:
+                        if best_result.success:
+                            successful += 1
+                        
+                        results["attack_details"].append({
+                            "prompt": prompt[:50] + "...",
+                            "attack_type": best_result.attack_type,
+                            "attack_variant": best_result.attack_variant,
+                            "response_preview": best_result.response[:100] + "..." if best_result.response else "",
+                            "success": best_result.success,
+                        })
+                    
+                    total += 1
+                except Exception as e:
+                    total += 1
                     results["attack_details"].append({
                         "prompt": prompt[:50] + "...",
-                        "success": metric.get("success", False),
-                        "confidence": metric.get("confidence", 0.5),
+                        "success": False,
+                        "error": str(e)[:30],
                     })
+            
+            # Clear progress line
+            if verbose:
+                print("\r" + " " * 60 + "\r", end="")
+        
+        if attack_mode in ["gradient", "both"]:
+            # Gradient attacks
+            if verbose:
+                phase = "1b" if attack_mode == "both" else "1"
+                print(f"    Phase {phase}: Gradient attacks ({num_attacks} attacks)...")
+            
+            gradient_attack = GradientAttack(model, tokenizer)
+            gradient_successful = 0
+            gradient_total = 0
+            
+            for i, prompt in enumerate(harmful_prompts):
+                # Show progress
+                if verbose:
+                    progress = f"[{i+1}/{len(harmful_prompts)}]"
+                    bar_len = 20
+                    filled = int(bar_len * (i + 1) / len(harmful_prompts))
+                    bar = "█" * filled + "░" * (bar_len - filled)
+                    print(f"\r      {bar} {progress} GCG attack...", end="", flush=True)
                 
-                total += 1
-            except Exception as e:
-                total += 1
-                results["attack_details"].append({
-                    "prompt": prompt[:50] + "...",
-                    "success": False,
-                    "error": str(e)[:30],
-                })
+                try:
+                    result = gradient_attack.attack(prompt, max_steps=50)
+                    
+                    if result.adversarial_suffix:
+                        full_prompt = prompt + " " + result.adversarial_suffix
+                        response = wrapper.generate(full_prompt, max_new_tokens=50)
+                        
+                        metric = evaluator.evaluate_single(prompt, response)
+                        if metric.get("success", False):
+                            gradient_successful += 1
+                            successful += 1
+                        
+                        results["attack_details"].append({
+                            "prompt": prompt[:50] + "...",
+                            "attack_type": "gradient",
+                            "attack_variant": "gcg",
+                            "response_preview": response[:100] + "..." if response else "",
+                            "success": metric.get("success", False),
+                        })
+                    
+                    gradient_total += 1
+                    total += 1
+                except Exception as e:
+                    gradient_total += 1
+                    total += 1
+                    results["attack_details"].append({
+                        "prompt": prompt[:50] + "...",
+                        "attack_type": "gradient",
+                        "success": False,
+                        "error": str(e)[:30],
+                    })
+            
+            # Clear progress line
+            if verbose:
+                print("\r" + " " * 60 + "\r", end="")
+                print(f"      Gradient ASR: {(gradient_successful/gradient_total if gradient_total > 0 else 0)*100:.1f}% ({gradient_successful}/{gradient_total})")
         
-        # Clear progress line
-        if verbose:
-            print("\r" + " " * 60 + "\r", end="")
-        
+        # Update overall results
         results["asr"] = successful / total if total > 0 else 0.0
         results["successful"] = successful
         results["total"] = total
         
         if verbose:
-            print(f"      ASR: {results['asr']*100:.1f}% ({successful}/{total})")
+            print(f"      Overall ASR: {results['asr']*100:.1f}% ({successful}/{total})")
         
         # ========================================
         # Phase 2: Security Probes
