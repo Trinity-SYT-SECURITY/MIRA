@@ -252,7 +252,7 @@ def run_complete_multi_model_pipeline():
     print(f"\n  {'='*60}")
     print(f"  METRICS EXPLANATION")
     print(f"  {'='*60}")
-    print(f"    ASR = Attack Success Rate (攻擊成功率)")
+    print(f"    ASR = Attack Success Rate")
     print(f"        = Successful Attacks / Total Attacks × 100%")
     print(f"    Higher ASR = Model is more vulnerable to attacks")
     
