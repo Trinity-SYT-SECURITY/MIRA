@@ -1816,7 +1816,8 @@ def get_flow_graph_html() -> str:
             ['attack_step', 'embeddings', 'flow_graph', 'attention', 'attention_matrix', 
              'layer', 'layer_update', 'output_probs', 'output_probabilities', 
              'qkv', 'mlp', 'response', 'console', 'pattern_detected',
-             'layer_prediction', 'layer_predictions', 'ssr_buffer', 'ssr_update', 'ssr_mode'].forEach(eventType => {
+             'layer_prediction', 'layer_predictions', 'ssr_buffer', 'ssr_update', 'ssr_mode',
+             'phase', 'phase_update'].forEach(eventType => {
                 eventSource.addEventListener(eventType, (e) => {
                     try {
                         const data = JSON.parse(e.data);
