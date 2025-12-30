@@ -242,7 +242,12 @@ class ModelManager:
     
     def load_model(self, model_name: str, device: str = "auto"):
         """
-        Load a model from local storage.
+        Load a model from local storage or HuggingFace cache.
+        
+        Priority:
+        1. Check project/models/ directory
+        2. Fallback to HuggingFace cache
+        3. Download if not found anywhere
         
         Args:
             model_name: HuggingFace model name
@@ -254,13 +259,6 @@ class ModelManager:
         from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
         
-        # Check if downloaded
-        if not self.is_model_downloaded(model_name):
-            print(f"  Model {model_name} not found. Downloading...")
-            self.download_model(model_name)
-        
-        model_path = self.get_model_path(model_name)
-        
         # Determine device
         if device == "auto":
             if torch.cuda.is_available():
@@ -270,12 +268,53 @@ class ModelManager:
             else:
                 device = "cpu"
         
-        # Load from local directory
-        tokenizer = AutoTokenizer.from_pretrained(str(model_path))
-        model = AutoModelForCausalLM.from_pretrained(
-            str(model_path),
-            torch_dtype=torch.float32,
-        )
+        # Check if model exists in project/models
+        model_path = self.get_model_path(model_name)
+        
+        # Try loading from project/models first
+        if self.is_model_downloaded(model_name):
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(str(model_path))
+                model = AutoModelForCausalLM.from_pretrained(
+                    str(model_path),
+                    torch_dtype=torch.float32,
+                )
+                print(f"  ✓ Loaded {model_name} from project/models")
+            except Exception as e:
+                print(f"  ⚠️  Failed to load from project/models: {e}")
+                print(f"  → Trying HuggingFace cache...")
+                model, tokenizer = self._load_from_hf_cache(model_name)
+        else:
+            # Try HuggingFace cache
+            print(f"  Model {model_name} not in project/models")
+            print(f"  → Checking HuggingFace cache...")
+            
+            try:
+                model, tokenizer = self._load_from_hf_cache(model_name)
+                print(f"  ✓ Loaded from HuggingFace cache")
+                
+                # Ask if user wants to copy to project/models
+                print(f"\n  Would you like to copy this model to project/models for faster access?")
+                print(f"  (This will not affect the HuggingFace cache)")
+                try:
+                    copy_choice = input("  Copy to project/models? (y/n, default: n): ").strip().lower()
+                    if copy_choice == 'y':
+                        print(f"  Copying {model_name} to project/models...")
+                        self.download_model(model_name, force=False, verbose=True)
+                except:
+                    pass
+                
+            except Exception as e:
+                print(f"  ⚠️  Not found in HuggingFace cache")
+                print(f"  → Downloading to project/models...")
+                self.download_model(model_name)
+                
+                # Load from newly downloaded location
+                tokenizer = AutoTokenizer.from_pretrained(str(model_path))
+                model = AutoModelForCausalLM.from_pretrained(
+                    str(model_path),
+                    torch_dtype=torch.float32,
+                )
         
         model = model.to(device)
         model.eval()
@@ -283,6 +322,28 @@ class ModelManager:
         # Set pad token if needed
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
+        
+        return model, tokenizer
+    
+    def _load_from_hf_cache(self, model_name: str):
+        """
+        Load model directly from HuggingFace cache.
+        
+        Args:
+            model_name: HuggingFace model name
+            
+        Returns:
+            Tuple of (model, tokenizer)
+        """
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch
+        
+        # Load from HF cache (will use cache if available)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float32,
+        )
         
         return model, tokenizer
     
