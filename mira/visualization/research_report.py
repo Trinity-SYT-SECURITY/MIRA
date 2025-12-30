@@ -1715,6 +1715,8 @@ class ResearchReportGenerator:
         output_filename: Optional[str] = None,
         charts_dir: Optional[str] = None,
         ml_judge_config: Optional[Dict[str, Any]] = None,
+        logit_lens_results: Optional[List[Dict[str, Any]]] = None,
+        uncertainty_results: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Generate complete research report.

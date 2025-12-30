@@ -1429,6 +1429,8 @@ def main():
                     "avg_confidence": avg_confidence,
                 },
                 charts_dir=str(charts_dir),
+                logit_lens_results=logit_lens_results if 'logit_lens_results' in locals() else None,
+                uncertainty_results=uncertainty_results if 'uncertainty_results' in locals() else None,
             )
             print(f"    ✓ {html_path}")
         except Exception as e:
