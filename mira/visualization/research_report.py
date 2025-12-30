@@ -562,6 +562,110 @@ REPORT_TEMPLATE = '''<!DOCTYPE html>
             color: var(--text-muted);
         }}
         
+        /* Probe Summary Stats */
+        .probe-summary {{
+            margin-bottom: 24px;
+        }}
+        
+        .probe-summary .summary-stats {{
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            padding: 24px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }}
+        
+        .probe-summary .stat-item {{
+            text-align: center;
+        }}
+        
+        .probe-summary .stat-value {{
+            font-size: 2.5rem;
+            font-weight: 700;
+        }}
+        
+        .probe-summary .stat-value.danger {{
+            color: var(--danger);
+        }}
+        
+        .probe-summary .stat-value.success {{
+            color: var(--success);
+        }}
+        
+        .probe-summary .stat-label {{
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }}
+        
+        /* Success Attack Card Highlight */
+        .probe-card.success-attack {{
+            border: 2px solid var(--danger);
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), var(--bg-tertiary));
+        }}
+        
+        /* Blocked Summary */
+        .blocked-summary {{
+            margin-top: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), var(--bg-tertiary));
+            border-radius: 12px;
+            border: 1px solid var(--success);
+        }}
+        
+        .blocked-header {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }}
+        
+        .blocked-icon {{
+            font-size: 1.5rem;
+        }}
+        
+        .blocked-title {{
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--success);
+        }}
+        
+        .blocked-categories {{
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }}
+        
+        .blocked-note {{
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-style: italic;
+        }}
+        
+        /* Chart Embed */
+        .chart-embed {{
+            margin: 24px 0;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }}
+        
+        .chart-embed img {{
+            width: 100%;
+            display: block;
+        }}
+        
+        .chart-embed-caption {{
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-align: center;
+        }}
+
+        
         /* Layer Analysis Bars */
         .layer-bar {{
             display: flex;
@@ -1297,57 +1401,103 @@ class ResearchReportGenerator:
         self,
         probe_results: List[Dict[str, Any]],
     ) -> str:
-        """Generate probe test results with full text display."""
+        """Generate probe test results - show all successful attacks, summary for blocked."""
         if not probe_results:
             return ""
         
-        cards = ""
-        for result in probe_results[:12]:
-            success = result.get("success", False)
-            name = result.get("name", "Unknown Probe")
-            category = result.get("category", "misc")
-            prompt = result.get("prompt", "No prompt available")
-            response = result.get("response", "No response recorded")
-            confidence = result.get("confidence", 0.0)
-            
-            badge_class = "danger" if success else "success"
-            status = "BYPASSED" if success else "BLOCKED"
-            response_class = "success" if success else "blocked"
-            
-            # Truncate very long texts but keep more context
-            if len(prompt) > 200:
-                prompt = prompt[:200] + "..."
-            if len(response) > 300:
-                response = response[:300] + "..."
-            
-            cards += f'''
-            <div class="probe-card">
-                <div class="probe-header">
-                    <span class="probe-name">{name}</span>
-                    <span class="probe-category">{category}</span>
+        # Separate successful and blocked attacks
+        successful_attacks = [r for r in probe_results if r.get("success", False)]
+        blocked_attacks = [r for r in probe_results if not r.get("success", False)]
+        
+        # Calculate summary stats
+        total = len(probe_results)
+        success_count = len(successful_attacks)
+        blocked_count = len(blocked_attacks)
+        asr = (success_count / total * 100) if total > 0 else 0
+        
+        # Generate summary header
+        summary_html = f'''
+        <div class="probe-summary">
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <span class="stat-value danger">{success_count}</span>
+                    <span class="stat-label">Successful Attacks</span>
                 </div>
-                <div class="probe-content">
-                    <div class="probe-label">Attack Prompt</div>
-                    <div class="probe-prompt">{prompt}</div>
+                <div class="stat-item">
+                    <span class="stat-value success">{blocked_count}</span>
+                    <span class="stat-label">Blocked Attacks</span>
                 </div>
-                <div class="probe-content">
-                    <div class="probe-label">Model Response</div>
-                    <div class="probe-response {response_class}">{response}</div>
+                <div class="stat-item">
+                    <span class="stat-value">{asr:.1f}%</span>
+                    <span class="stat-label">Attack Success Rate</span>
                 </div>
-                <div class="probe-footer">
-                    <div class="probe-metrics">
-                        <span>Confidence: {confidence*100:.0f}%</span>
+            </div>
+        </div>
+        '''
+        
+        # Generate cards for ALL successful attacks (no truncation)
+        success_cards = ""
+        if successful_attacks:
+            for result in successful_attacks:
+                name = result.get("name", "Unknown Probe")
+                category = result.get("category", "misc")
+                prompt = result.get("prompt", "No prompt available")
+                response = result.get("response", "No response recorded")
+                confidence = result.get("confidence", 0.0)
+                
+                # Keep more context for successful attacks
+                if len(prompt) > 300:
+                    prompt = prompt[:300] + "..."
+                if len(response) > 500:
+                    response = response[:500] + "..."
+                
+                success_cards += f'''
+                <div class="probe-card success-attack">
+                    <div class="probe-header">
+                        <span class="probe-name">{name}</span>
+                        <span class="probe-category">{category}</span>
                     </div>
-                    <span class="badge {badge_class}">{status}</span>
+                    <div class="probe-content">
+                        <div class="probe-label">Attack Prompt</div>
+                        <div class="probe-prompt">{prompt}</div>
+                    </div>
+                    <div class="probe-content">
+                        <div class="probe-label">Model Response (BYPASSED)</div>
+                        <div class="probe-response success">{response}</div>
+                    </div>
+                    <div class="probe-footer">
+                        <div class="probe-metrics">
+                            <span>Confidence: {confidence*100:.0f}%</span>
+                        </div>
+                        <span class="badge danger">BYPASSED</span>
+                    </div>
                 </div>
+                '''
+        else:
+            success_cards = '''
+            <div class="probe-card" style="display: flex; align-items: center; justify-content: center; color: var(--accent-green); padding: 40px;">
+                ✓ No successful attacks - model blocked all probes
             </div>
             '''
         
-        remaining = len(probe_results) - 12
-        if remaining > 0:
-            cards += f'''
-            <div class="probe-card" style="display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
-                + {remaining} more probe results
+        # Generate collapsed summary for blocked attacks (categories only)
+        blocked_summary = ""
+        if blocked_attacks:
+            # Group by category
+            categories = {}
+            for r in blocked_attacks:
+                cat = r.get("category", "misc")
+                categories[cat] = categories.get(cat, 0) + 1
+            
+            cat_items = ", ".join([f"{cat}: {count}" for cat, count in sorted(categories.items())])
+            blocked_summary = f'''
+            <div class="blocked-summary">
+                <div class="blocked-header">
+                    <span class="blocked-icon">🛡️</span>
+                    <span class="blocked-title">{blocked_count} Attacks Blocked</span>
+                </div>
+                <div class="blocked-categories">Categories: {cat_items}</div>
+                <div class="blocked-note">Detailed logs available in: conversations/attack_log.md</div>
             </div>
             '''
         
@@ -1358,12 +1508,15 @@ class ResearchReportGenerator:
                 <h2>Security Probe Results</h2>
             </div>
             <p class="section-description">
-                Detailed results from security probes testing various attack vectors.
-                Each card shows the attack prompt and the model's response.
+                Showing <strong>all successful attacks</strong> that bypassed model safety.
+                Blocked attacks are summarized below. Full logs in conversations/ folder.
             </p>
+            {summary_html}
+            <h3 style="margin-top: 30px; color: var(--accent-red);">⚠️ Successful Attacks ({success_count})</h3>
             <div class="probe-grid">
-                {cards}
+                {success_cards}
             </div>
+            {blocked_summary}
         </section>
         '''
     
