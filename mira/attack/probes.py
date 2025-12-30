@@ -213,6 +213,29 @@ def get_all_categories() -> List[str]:
     return list(set(p.category for p in ALL_PROBES))
 
 
+def get_security_probes(limit: int = None) -> List[Dict[str, Any]]:
+    """
+    Get security probes as list of dicts.
+    
+    Args:
+        limit: Maximum number of probes to return (None for all)
+        
+    Returns:
+        List of probe dicts with prompt, name, category, etc.
+    """
+    probes = ALL_PROBES[:limit] if limit else ALL_PROBES
+    return [
+        {
+            "name": p.name,
+            "category": p.category,
+            "prompt": p.prompt,
+            "description": p.description,
+            "risk_level": p.risk_level,
+        }
+        for p in probes
+    ]
+
+
 class ProbeRunner:
     """
     Runs attack probes against a model.
