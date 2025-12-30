@@ -157,35 +157,51 @@ def run_complete_multi_model_pipeline():
     # Show available models
     print("  Available models:")
     downloaded = manager.list_downloaded_models()
+    
+    if not downloaded:
+        print("\n  No models available. Please download models first (Mode 5).")
+        return
+    
     for i, m in enumerate(downloaded):
         print(f"    [{i+1}] {m}")
     
+    print(f"\n    [a] Select ALL models")
     print()
     
-    # Get max size / model count
-    try:
-        max_size = input("  Max model size in GB (default: 1.0): ").strip()
-        max_size = float(max_size) if max_size else 1.0
-    except:
-        max_size = 1.0
+    # Let user select models
+    print("  Select models to analyze:")
+    print("    - Enter numbers separated by commas (e.g., 1,3,5)")
+    print("    - Or 'a' for all models")
+    print("    - Or press Enter for first 3 models")
     
     try:
-        num_attacks = input("  Attacks per model (default: 5): ").strip()
+        selection = input("\n  Your selection: ").strip().lower()
+        
+        if selection == 'a':
+            # All models
+            models_to_test = downloaded[:5]  # Limit to 5 for safety
+            print(f"\n  Selected ALL models (max 5)")
+        elif selection == '':
+            # Default: first 3
+            models_to_test = downloaded[:3]
+            print(f"\n  Selected first 3 models (default)")
+        else:
+            # Parse comma-separated numbers
+            indices = [int(x.strip()) - 1 for x in selection.split(',')]
+            models_to_test = [downloaded[i] for i in indices if 0 <= i < len(downloaded)]
+            if not models_to_test:
+                print("\n  Invalid selection. Using first 3 models.")
+                models_to_test = downloaded[:3]
+    except:
+        models_to_test = downloaded[:3]
+        print("\n  Invalid input. Using first 3 models.")
+    
+    # Get number of attacks
+    try:
+        num_attacks = input("\n  Attacks per model (default: 5): ").strip()
         num_attacks = int(num_attacks) if num_attacks else 5
     except:
         num_attacks = 5
-    
-    # Filter models by size
-    models_to_test = []
-    for m_name in downloaded:
-        # Check if model is under size limit
-        models_to_test.append(m_name)
-        if len(models_to_test) >= 5:  # Limit to 5 models
-            break
-    
-    if not models_to_test:
-        print("\n  No models available. Please download models first (Mode 5).")
-        return
     
     print(f"\n  Will analyze {len(models_to_test)} models with {num_attacks} attacks each:")
     for m in models_to_test:
