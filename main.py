@@ -383,7 +383,7 @@ def main():
       
   [5] Download Models
       → Download comparison models from HuggingFace
-      → Batch download with size filtering
+      → Skip already downloaded models (no duplicates)
       
 """)
     
