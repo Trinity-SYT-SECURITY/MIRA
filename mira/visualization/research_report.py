@@ -2014,6 +2014,19 @@ class ResearchReportGenerator:
         
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        # Initialize comprehensive visualization and academic structure generators
+        try:
+            from mira.visualization.comprehensive_viz import ComprehensiveVisualizer
+            from mira.visualization.academic_structure import AcademicStructureGenerator
+            
+            comp_viz = ComprehensiveVisualizer()
+            academic_gen = AcademicStructureGenerator()
+            use_comprehensive = True
+        except ImportError:
+            use_comprehensive = False
+            comp_viz = None
+            academic_gen = None
+        
         # Build model comparison table
         model_rows = ""
         for m in sorted(models, key=lambda x: x.get("asr", 0), reverse=True):
