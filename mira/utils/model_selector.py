@@ -120,76 +120,76 @@ def get_available_target_models() -> List[ModelInfo]:
                 is_target = model_role == "target"
             
             if is_target:
-            # Create ModelInfo from registry
-            size = info.get("size", "?")
-            recommended = info.get("recommended", False)
-            
-            # Map size to params
-            params = size
-            
-            # Determine speed and difficulty based on size
-            if "M" in size:
-                size_num = float(size.replace("M", ""))
-                if size_num < 200:
-                    speed = "fast"
-                    difficulty = "easy"
-                    min_ram = 2
-                elif size_num < 500:
-                    speed = "fast"
-                    difficulty = "easy"
-                    min_ram = 4
+                # Create ModelInfo from registry
+                size = info.get("size", "?")
+                recommended = info.get("recommended", False)
+                
+                # Map size to params
+                params = size
+                
+                # Determine speed and difficulty based on size
+                if "M" in size:
+                    size_num = float(size.replace("M", ""))
+                    if size_num < 200:
+                        speed = "fast"
+                        difficulty = "easy"
+                        min_ram = 2
+                    elif size_num < 500:
+                        speed = "fast"
+                        difficulty = "easy"
+                        min_ram = 4
+                    else:
+                        speed = "medium"
+                        difficulty = "easy"
+                        min_ram = 4
+                elif "B" in size or "b" in size:
+                    size_num = float(size.replace("B", "").replace("b", ""))
+                    if size_num < 2:
+                        speed = "medium"
+                        difficulty = "easy"
+                        min_ram = 4
+                    elif size_num < 5:
+                        speed = "medium"
+                        difficulty = "medium"
+                        min_ram = 8
+                    else:
+                        speed = "slow"
+                        difficulty = "medium"
+                        min_ram = 8
                 else:
                     speed = "medium"
                     difficulty = "easy"
                     min_ram = 4
-            elif "B" in size or "b" in size:
-                size_num = float(size.replace("B", "").replace("b", ""))
-                if size_num < 2:
-                    speed = "medium"
-                    difficulty = "easy"
-                    min_ram = 4
-                elif size_num < 5:
-                    speed = "medium"
-                    difficulty = "medium"
-                    min_ram = 8
-                else:
-                    speed = "slow"
-                    difficulty = "medium"
-                    min_ram = 8
-            else:
-                speed = "medium"
-                difficulty = "easy"
-                min_ram = 4
-            
-            # Determine category
-            if "M" in size and float(size.replace("M", "")) < 200:
-                category = "tiny"
-            elif "M" in size:
-                category = "small"
-            elif "B" in size or "b" in size:
-                size_num = float(size.replace("B", "").replace("b", ""))
-                if size_num < 2:
+                
+                # Determine category
+                if "M" in size and float(size.replace("M", "")) < 200:
+                    category = "tiny"
+                elif "M" in size:
                     category = "small"
-                elif size_num < 5:
-                    category = "medium"
+                elif "B" in size or "b" in size:
+                    size_num = float(size.replace("B", "").replace("b", ""))
+                    if size_num < 2:
+                        category = "small"
+                    elif size_num < 5:
+                        category = "medium"
+                    else:
+                        category = "large"
                 else:
-                    category = "large"
-            else:
-                category = "small"
-            
-            model_info = ModelInfo(
-                name=hf_name_used,
-                display_name=info.get("description", hf_name_used).split(",")[0] if info.get("description") else hf_name_used.split("/")[-1],
-                params=params,
-                min_ram_gb=min_ram,
-                min_vram_gb=0,  # CPU-friendly
-                speed=speed,
-                difficulty=difficulty,
-                description=info.get("description", ""),
-                category=category,
-                local_name=model_dir,
-            )
-            target_models.append(model_info)
+                    category = "small"
+                
+                model_info = ModelInfo(
+                    name=hf_name_used,
+                    display_name=info.get("description", hf_name_used).split(",")[0] if info.get("description") else hf_name_used.split("/")[-1],
+                    params=params,
+                    min_ram_gb=min_ram,
+                    min_vram_gb=0,  # CPU-friendly
+                    speed=speed,
+                    difficulty=difficulty,
+                    description=info.get("description", ""),
+                    category=category,
+                    local_name=model_dir,
+                )
+                target_models.append(model_info)
     
     # Sort by size (smallest first for CPU)
     def sort_key(m):
