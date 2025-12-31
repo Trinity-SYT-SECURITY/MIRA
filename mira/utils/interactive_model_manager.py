@@ -15,6 +15,28 @@ import json
 class ModelManager:
     """Manages model storage, detection, and migration."""
     
+    # Required models for MIRA to function
+    REQUIRED_MODELS = [
+        {
+            "name": "gpt2",
+            "description": "Small language model for testing",
+            "size_estimate_mb": 500,
+            "optional": False,
+        },
+        {
+            "name": "distilbert-base-uncased-finetuned-sst-2-english",
+            "description": "Judge model for safety evaluation",
+            "size_estimate_mb": 250,
+            "optional": False,
+        },
+        {
+            "name": "sentence-transformers/all-MiniLM-L6-v2",
+            "description": "Embedding model for similarity analysis",
+            "size_estimate_mb": 90,
+            "optional": True,
+        },
+    ]
+    
     def __init__(self, project_models_dir: Optional[Path] = None):
         """
         Initialize model manager.
@@ -129,13 +151,97 @@ class ModelManager:
             pass
         return total
     
-    def migrate_model(self, model_info: Dict[str, Any], force: bool = False) -> bool:
+    def check_required_models(self) -> Tuple[List[Dict], List[Dict]]:
         """
-        Migrate a model from HF cache to project/models.
+        Check which required models are missing.
+        
+        Returns:
+            Tuple of (missing_models, available_models)
+        """
+        from mira.utils.model_manager import MODEL_REGISTRY
+        
+        # Get all available models (project + HF cache)
+        project_models = self.scan_project_models()
+        hf_models = self.scan_hf_cache()
+        
+        available_names = set()
+        for m in project_models:
+            available_names.add(m["name"])
+            # Also add HF format
+            available_names.add(m["name"].replace("/", "--"))
+        
+        for m in hf_models:
+            available_names.add(m["name"])
+            available_names.add(m["local_name"])
+        
+        missing = []
+        available = []
+        
+        for req_model in self.REQUIRED_MODELS:
+            model_name = req_model["name"]
+            # Check various name formats
+            name_variants = [
+                model_name,
+                model_name.replace("/", "--"),
+                model_name.split("/")[-1],  # Just model name without org
+            ]
+            
+            if any(variant in available_names for variant in name_variants):
+                available.append(req_model)
+            else:
+                missing.append(req_model)
+        
+        return missing, available
+    
+    def download_model(self, model_name: str, target_dir: Optional[Path] = None) -> bool:
+        """
+        Download a model from HuggingFace.
+        
+        Args:
+            model_name: Model name in HF format
+            target_dir: Target directory (default: project_models_dir)
+            
+        Returns:
+            True if download successful
+        """
+        try:
+            from transformers import AutoModel, AutoTokenizer
+            
+            target_dir = target_dir or self.project_models_dir
+            local_name = model_name.replace("/", "--")
+            save_path = target_dir / local_name
+            
+            print(f"📥 Downloading {model_name}...")
+            print(f"   Target: {save_path}")
+            
+            # Download model and tokenizer
+            model = AutoModel.from_pretrained(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            
+            # Save to target directory
+            model.save_pretrained(save_path)
+            tokenizer.save_pretrained(save_path)
+            
+            print(f"✅ Downloaded: {model_name}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Download failed: {e}")
+            return False
+    
+    def migrate_model(
+        self,
+        model_info: Dict[str, Any],
+        target_dir: Optional[Path] = None,
+        force: bool = False
+    ) -> bool:
+        """
+        Migrate a model from HF cache to target directory.
         
         Args:
             model_info: Model info dict from scan_hf_cache()
-            force: Force migration even if model exists in project
+            target_dir: Target directory (default: project_models_dir)
+            force: Force migration even if model exists in target
             
         Returns:
             True if migration successful
@@ -144,9 +250,10 @@ class ModelManager:
             print(f"❌ Model is not in HF cache, cannot migrate")
             return False
         
+        target_dir = target_dir or self.project_models_dir
         source_path = Path(model_info["path"])
         dest_name = model_info["local_name"]
-        dest_path = self.project_models_dir / dest_name
+        dest_path = target_dir / dest_name
         
         # Check if already exists
         if dest_path.exists() and not force:
@@ -217,6 +324,39 @@ class ModelManager:
                 "migrated": [],
             }
         
+        # Check for required models
+        missing_required, _ = self.check_required_models()
+        
+        if missing_required:
+            print("\n⚠️  Missing Required Models:")
+            for req in missing_required:
+                optional_tag = " (optional)" if req.get("optional") else " (required)"
+                print(f"   • {req['name']}{optional_tag}")
+                print(f"     {req['description']} (~{req['size_estimate_mb']} MB)")
+            
+            download_choice = input("\nDownload missing required models? (y/n): ").strip().lower()
+            if download_choice == 'y':
+                # Ask for download location
+                print("\nWhere should we download the models?")
+                print(f"  1. Project directory (recommended): {self.project_models_dir}")
+                print(f"  2. Custom directory")
+                print(f"  3. Cancel download")
+                
+                loc_choice = input("Choice (1-3): ").strip()
+                
+                download_dir = None
+                if loc_choice == "1":
+                    download_dir = self.project_models_dir
+                elif loc_choice == "2":
+                    custom_dir = input("Enter directory path: ").strip()
+                    download_dir = Path(custom_dir).expanduser().resolve()
+                    download_dir.mkdir(parents=True, exist_ok=True)
+                
+                if download_dir:
+                    for req in missing_required:
+                        if not req.get("optional"):
+                            self.download_model(req["name"], download_dir)
+        
         # Offer migration
         print(f"\n🔄 Found {len(hf_only_models)} models in HuggingFace cache not in project:")
         for i, model in enumerate(hf_only_models, 1):
@@ -224,7 +364,7 @@ class ModelManager:
         
         print("\n" + "=" * 70)
         print("Options:")
-        print("  1. Migrate all models to project directory (recommended)")
+        print("  1. Migrate all models to project directory")
         print("  2. Select specific models to migrate")
         print("  3. Skip migration (use HuggingFace cache)")
         print("  4. Change project models directory")
@@ -235,10 +375,23 @@ class ModelManager:
         migrated = []
         
         if choice == "1":
-            # Migrate all
-            print(f"\n📦 Migrating {len(hf_only_models)} models...")
+            # Migrate all - ask for target directory
+            print("\nWhere should we migrate the models to?")
+            print(f"  1. Current project directory: {self.project_models_dir}")
+            print(f"  2. Custom directory")
+            
+            target_choice = input("Choice (1-2): ").strip()
+            
+            target_dir = self.project_models_dir
+            if target_choice == "2":
+                custom_target = input("Enter target directory path: ").strip()
+                target_dir = Path(custom_target).expanduser().resolve()
+                target_dir.mkdir(parents=True, exist_ok=True)
+                print(f"✅ Target directory set to: {target_dir}")
+            
+            print(f"\n📦 Migrating {len(hf_only_models)} models to {target_dir}...")
             for model in hf_only_models:
-                if self.migrate_model(model):
+                if self.migrate_model(model, target_dir=target_dir):
                     migrated.append(model)
         
         elif choice == "2":
