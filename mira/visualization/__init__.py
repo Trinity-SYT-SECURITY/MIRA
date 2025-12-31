@@ -77,6 +77,18 @@ try:
 except ImportError:
     HEATMAP_VIZ_AVAILABLE = False
 
+# Attention Heatmap (Enhanced)
+try:
+    from mira.visualization.attention_heatmap import (
+        plot_attention_comparison_heatmap,
+        plot_head_wise_attention,
+        plot_attention_entropy_comparison,
+        generate_attention_heatmap_report,
+    )
+    ATTENTION_HEATMAP_AVAILABLE = True
+except ImportError:
+    ATTENTION_HEATMAP_AVAILABLE = False
+
 __all__ = [
     "plot_subspace_2d",
     "plot_subspace_3d",
