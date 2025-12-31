@@ -482,10 +482,32 @@ class ModelManager:
                 model_name.split("/")[-1],  # Just model name without org
             ]
             
+            # Check if model is available directly
             if any(variant in available_names for variant in name_variants):
                 available.append(req_model)
             else:
-                missing.append(req_model)
+                # Check if a replacement model is available
+                replaceable_by = req_model.get("replaceable_by", [])
+                replacement_found = False
+                for replacement in replaceable_by:
+                    replacement_variants = [
+                        replacement,
+                        replacement.replace("/", "--"),
+                        replacement.split("/")[-1],
+                    ]
+                    # Also check local_name of replacement from registry
+                    from mira.utils.model_manager import get_model_info
+                    repl_info = get_model_info(replacement)
+                    if repl_info:
+                        replacement_variants.append(repl_info.get("local_name", ""))
+                    
+                    if any(rv in available_names for rv in replacement_variants):
+                        replacement_found = True
+                        available.append(req_model)  # Consider as available
+                        break
+                
+                if not replacement_found:
+                    missing.append(req_model)
         
         return missing, available
     

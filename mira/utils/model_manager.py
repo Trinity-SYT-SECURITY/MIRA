@@ -23,9 +23,10 @@ MODEL_REGISTRY = {
     "HuggingFaceTB/SmolLM2-135M-Instruct": {
         "local_name": "smollm2-135m",
         "role": "target",
-        "recommended": True,
+        "recommended": False,  # Optional - SmolLM2-1.7B is a valid replacement
         "size": "135M",
         "description": "Ultra-lightweight, good for baseline testing",
+        "replaceable_by": ["HuggingFaceTB/SmolLM2-1.7B-Instruct"],  # 1.7B can replace this
     },
     "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
         "local_name": "smollm2-1.7b",
