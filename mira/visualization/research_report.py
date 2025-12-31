@@ -856,9 +856,25 @@ class ResearchReportGenerator:
         """
         chart_file = Path(chart_path)
         
-        # If path is relative, resolve from output_dir parent
+        # If path is relative, try multiple resolution strategies
         if not chart_file.is_absolute():
-            chart_file = self.output_dir.parent / chart_path
+            # Try 1: Resolve from output_dir parent (html's parent = results/run_xxx)
+            candidate1 = self.output_dir.parent / chart_path
+            # Try 2: Resolve from output_dir parent's parent (results/)
+            candidate2 = self.output_dir.parent.parent / chart_path
+            # Try 3: Strip leading "results/run_xxx/" if present
+            stripped_path = str(chart_path)
+            if stripped_path.startswith("results/"):
+                parts = stripped_path.split("/", 2)
+                if len(parts) >= 3:
+                    stripped_path = parts[2]  # e.g., "charts/subspace.png"
+            candidate3 = self.output_dir.parent / stripped_path
+            
+            # Find the first existing candidate
+            for candidate in [candidate1, candidate2, candidate3, chart_file]:
+                if candidate.exists():
+                    chart_file = candidate
+                    break
         
         if not chart_file.exists():
             return f'''
