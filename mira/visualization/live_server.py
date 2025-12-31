@@ -59,6 +59,29 @@ current_embeddings_state: Dict = {
     "embeddings": [],
 }
 
+# Global state for attention matrix (for late-connecting clients)
+current_attention_state: Dict = {
+    "layer": 0,
+    "head": 0,
+    "weights": [],
+    "tokens": [],
+}
+
+# Global state for layer update (for late-connecting clients)  
+current_layer_state: Dict = {
+    "layer_idx": 0,
+    "refusal_score": 0.5,
+    "acceptance_score": 0.5,
+    "direction": "neutral",
+    "activation_norm": 1.0,
+}
+
+# Global state for output probabilities (for late-connecting clients)
+current_output_probs_state: Dict = {
+    "tokens": [],
+    "probabilities": [],
+}
+
 
 @dataclass
 class VisualizationEvent:
@@ -139,6 +162,14 @@ class LiveVisualizationServer:
                             data=current_embeddings_state
                         )
                         yield f"event: embeddings\ndata: {embeddings_event.to_json()}\n\n"
+                    
+                    # Send current attention matrix for late-connecting clients
+                    if current_attention_state and current_attention_state.get("weights"):
+                        attention_event = VisualizationEvent(
+                            event_type="attention_matrix",
+                            data=current_attention_state
+                        )
+                        yield f"event: attention_matrix\ndata: {attention_event.to_json()}\n\n"
                     
                     # Send initial status
                     status_event = VisualizationEvent(
@@ -495,6 +526,15 @@ class LiveVisualizationServer:
             attention_weights: 2D matrix [seq, seq] of attention values
             tokens: List of token strings
         """
+        # Update global state for late-connecting clients
+        global current_attention_state
+        current_attention_state = {
+            "layer": layer_idx,
+            "head": head_idx,
+            "weights": attention_weights,
+            "tokens": tokens,
+        }
+        
         event = VisualizationEvent(
             event_type="attention_matrix",
             data={
