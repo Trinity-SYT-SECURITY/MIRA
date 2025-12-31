@@ -119,6 +119,7 @@ class ModelManager:
                     "description": f"{model['description']} ({model['size']})",
                     "role": "target",
                     "optional": not model.get("recommended", False),
+                    "replaceable_by": model.get("replaceable_by", []),
                 })
         
         # Add all recommended judge models (critical for evaluation)
@@ -130,6 +131,7 @@ class ModelManager:
                     "description": f"{model['description']} ({model['size']})",
                     "role": "judge",
                     "optional": False,  # Judges are always required
+                    "replaceable_by": model.get("replaceable_by", []),
                 })
         
         # Add recommended attacker models (optional)
@@ -142,6 +144,7 @@ class ModelManager:
                         "description": f"{model['description']} ({model['size']})",
                         "role": "attacker",
                         "optional": True,
+                        "replaceable_by": model.get("replaceable_by", []),
                     })
         
         return required_models
