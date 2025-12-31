@@ -14,6 +14,10 @@ from mira.attack.ssr import (
     SteeringSSR,
     SteeringSSRConfig,
 )
+from mira.attack.feature_targeting import (
+    FeatureTargetingPromptGenerator,
+    PromptTemplateLibrary,
+)
 
 __all__ = [
     "BaseAttack",
@@ -32,4 +36,7 @@ __all__ = [
     "ProbeSSRConfig",
     "SteeringSSR",
     "SteeringSSRConfig",
+    "FeatureTargetingPromptGenerator",
+    "PromptTemplateLibrary",
 ]
+

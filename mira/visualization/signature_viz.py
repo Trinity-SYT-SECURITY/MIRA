@@ -275,4 +275,201 @@ class SignatureVisualizer:
         plt.close()
         
         return str(path)
+    
+    def plot_universal_signatures_comparison(
+        self,
+        signature_matrix: SignatureMatrix,
+        universal_signatures: Dict[str, Any],
+        title: str = "Universal Attack Signatures: Baseline vs Attack",
+        save_name: str = "universal_signatures_comparison",
+    ) -> Optional[str]:
+        """
+        Plot comparison of universal signatures between baseline and attack.
+        
+        Shows that these features appear ONLY during attacks and rarely in baseline.
+        
+        Args:
+            signature_matrix: Computed SignatureMatrix
+            universal_signatures: Output from identify_universal_attack_signatures
+            title: Chart title
+            save_name: Filename for saving
+            
+        Returns:
+            Path to saved chart, or None if matplotlib unavailable
+        """
+        if not HAS_MATPLOTLIB or not universal_signatures.get("universal_signatures"):
+            return None
+        
+        universal_list = universal_signatures["universal_signatures"]
+        if not universal_list:
+            return None
+        
+        # Extract feature data
+        features = [s["feature"] for s in universal_list]
+        
+        # Get baseline and attack values for these features
+        def vector_to_array(vector) -> np.ndarray:
+            arr = [
+                vector.probe_refusal_score,
+                vector.probe_acceptance_score,
+                vector.attention_entropy,
+                vector.attention_max_weight,
+                vector.token_entropy,
+                vector.top1_top2_gap,
+            ]
+            for i in range(min(len(vector.layer_activation_norms), 6)):
+                arr.append(vector.layer_activation_norms[i] if i < len(vector.layer_activation_norms) else 0.0)
+            return np.array(arr)
+        
+        baseline_array = np.array([vector_to_array(v) for v in signature_matrix.baseline_vectors])
+        attack_array = np.array([vector_to_array(v) for v in signature_matrix.attack_vectors])
+        
+        # Get feature indices
+        feature_names = signature_matrix.feature_names
+        feature_indices = [feature_names.index(f) for f in features]
+        
+        # Extract values for universal features
+        baseline_values = baseline_array[:, feature_indices]
+        attack_values = attack_array[:, feature_indices]
+        
+        # Compute statistics
+        baseline_mean = np.mean(baseline_values, axis=0)
+        baseline_std = np.std(baseline_values, axis=0)
+        attack_mean = np.mean(attack_values, axis=0)
+        attack_std = np.std(attack_values, axis=0)
+        
+        # Create figure with subplots
+        fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+        
+        # Top: Bar chart comparing means
+        x_pos = np.arange(len(features))
+        width = 0.35
+        
+        bars1 = axes[0].bar(x_pos - width/2, baseline_mean, width, 
+                           yerr=baseline_std, label="Baseline (Normal Prompts)", 
+                           color="steelblue", alpha=0.7, capsize=5)
+        bars2 = axes[0].bar(x_pos + width/2, attack_mean, width,
+                           yerr=attack_std, label="Attack Prompts",
+                           color="coral", alpha=0.7, capsize=5)
+        
+        axes[0].set_xlabel("Universal Attack Signatures", fontsize=12, fontweight="bold")
+        axes[0].set_ylabel("Feature Value", fontsize=12)
+        axes[0].set_title("Feature Values: Baseline vs Attack\n(These features appear ONLY during attacks)", 
+                         fontsize=13, fontweight="bold")
+        axes[0].set_xticks(x_pos)
+        axes[0].set_xticklabels([f.replace("_", " ").title() for f in features], rotation=45, ha="right")
+        axes[0].legend(fontsize=11)
+        axes[0].grid(axis="y", alpha=0.3)
+        
+        # Add false positive rate annotations
+        for i, sig in enumerate(universal_list):
+            fp_rate = sig.get("false_positive_rate", 0.0)
+            axes[0].text(i, max(baseline_mean[i], attack_mean[i]) + 0.1,
+                        f"FP: {fp_rate:.1%}", ha="center", fontsize=9, 
+                        color="red" if fp_rate > 0.1 else "green", fontweight="bold")
+        
+        # Bottom: Distribution comparison (box plot)
+        data_to_plot = []
+        labels = []
+        for i, feat in enumerate(features):
+            data_to_plot.append(baseline_values[:, i])
+            labels.append(f"{feat.replace('_', ' ').title()}\n(Baseline)")
+            data_to_plot.append(attack_values[:, i])
+            labels.append(f"{feat.replace('_', ' ').title()}\n(Attack)")
+        
+        bp = axes[1].boxplot(data_to_plot, labels=labels, patch_artist=True, 
+                            widths=0.6, showmeans=True)
+        
+        # Color code: blue for baseline, red for attack
+        colors = ["steelblue" if i % 2 == 0 else "coral" for i in range(len(bp["boxes"]))]
+        for patch, color in zip(bp["boxes"], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+        
+        axes[1].set_ylabel("Feature Value Distribution", fontsize=12)
+        axes[1].set_title("Distribution Comparison: Baseline vs Attack\n(Shows separation between normal and attack)", 
+                         fontsize=13, fontweight="bold")
+        axes[1].grid(axis="y", alpha=0.3)
+        axes[1].tick_params(axis="x", rotation=45)
+        
+        plt.suptitle(title, fontsize=15, fontweight="bold", y=0.995)
+        plt.tight_layout()
+        
+        path = self.output_dir / f"{save_name}.png"
+        plt.savefig(path, bbox_inches="tight", dpi=300)
+        plt.close()
+        
+        return str(path)
+    
+    def plot_universal_signatures_detection_accuracy(
+        self,
+        signature_matrix: SignatureMatrix,
+        universal_signatures: Dict[str, Any],
+        title: str = "Universal Signatures Detection Accuracy",
+        save_name: str = "universal_signatures_detection",
+    ) -> Optional[str]:
+        """
+        Plot detection accuracy metrics for universal signatures.
+        
+        Shows true positive rate (in attacks) vs false positive rate (in baseline).
+        
+        Args:
+            signature_matrix: Computed SignatureMatrix
+            universal_signatures: Output from identify_universal_attack_signatures
+            title: Chart title
+            save_name: Filename for saving
+            
+        Returns:
+            Path to saved chart, or None if matplotlib unavailable
+        """
+        if not HAS_MATPLOTLIB or not universal_signatures.get("universal_signatures"):
+            return None
+        
+        universal_list = universal_signatures["universal_signatures"]
+        if not universal_list:
+            return None
+        
+        features = [s["feature"] for s in universal_list]
+        cross_attack_stability = [s["cross_attack_stability"] for s in universal_list]
+        false_positive_rates = [s["false_positive_rate"] for s in universal_list]
+        
+        # Create ROC-like plot
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Scatter plot: False Positive Rate (x) vs True Positive Rate (y)
+        scatter = ax.scatter(false_positive_rates, cross_attack_stability, 
+                           s=200, alpha=0.7, c=range(len(features)), 
+                           cmap="RdYlGn_r", edgecolors="black", linewidths=1.5)
+        
+        # Add feature labels
+        for i, feat in enumerate(features):
+            ax.annotate(feat.replace("_", " ").title()[:20], 
+                       (false_positive_rates[i], cross_attack_stability[i]),
+                       xytext=(5, 5), textcoords="offset points", fontsize=9,
+                       bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7))
+        
+        # Add ideal region (low FP, high TP)
+        ax.axhspan(0.8, 1.0, xmin=0, xmax=0.1, alpha=0.2, color="green", 
+                  label="Ideal Region (High TP, Low FP)")
+        ax.axvspan(0, 0.1, ymin=0.8, ymax=1.0, alpha=0.2, color="green")
+        
+        ax.set_xlabel("False Positive Rate (in Baseline)", fontsize=12, fontweight="bold")
+        ax.set_ylabel("True Positive Rate (Cross-Attack Stability)", fontsize=12, fontweight="bold")
+        ax.set_title(title + "\n(Features in top-right are best detectors)", 
+                    fontsize=13, fontweight="bold")
+        ax.set_xlim(-0.05, max(0.2, max(false_positive_rates) * 1.2))
+        ax.set_ylim(0.7, 1.05)
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=10)
+        
+        # Add diagonal line (random classifier)
+        ax.plot([0, 1], [0, 1], "k--", alpha=0.3, label="Random Classifier")
+        
+        plt.tight_layout()
+        
+        path = self.output_dir / f"{save_name}.png"
+        plt.savefig(path, bbox_inches="tight", dpi=300)
+        plt.close()
+        
+        return str(path)
 

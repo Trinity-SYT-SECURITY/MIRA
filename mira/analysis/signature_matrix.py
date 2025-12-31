@@ -371,4 +371,115 @@ class SignatureMatrixAnalyzer:
             "num_stable": len(stable_features),
             "total_features": len(signature_matrix.feature_names),
         }
+    
+    def identify_universal_attack_signatures(
+        self,
+        signature_matrix: SignatureMatrix,
+        cross_attack_stability_threshold: float = 0.8,
+        z_score_threshold: float = 1.5,
+        baseline_false_positive_rate: float = 0.1,
+    ) -> Dict[str, Any]:
+        """
+        Identify universal attack signatures that appear in ALL attack types.
+        
+        A universal signature is a feature that:
+        1. Appears in attacks across ALL attack types (cross-attack stability)
+        2. Has high z-score (significantly different from baseline)
+        3. Rarely appears in baseline prompts (low false positive rate)
+        4. Can be used as a reliable attack detector
+        
+        Args:
+            signature_matrix: Computed SignatureMatrix
+            cross_attack_stability_threshold: Minimum stability across all attack types (0-1)
+            z_score_threshold: Minimum z-score magnitude
+            baseline_false_positive_rate: Maximum allowed false positive rate in baseline (0-1)
+            
+        Returns:
+            Dictionary with identified universal attack signatures
+        """
+        if not signature_matrix.attack_vectors:
+            return {
+                "universal_signatures": [],
+                "num_universal": 0,
+                "total_features": len(signature_matrix.feature_names),
+            }
+        
+        # Group attacks by type
+        attack_types = defaultdict(list)
+        for i, vector in enumerate(signature_matrix.attack_vectors):
+            attack_type = vector.attack_type or "unknown"
+            attack_types[attack_type].append(i)
+        
+        # Convert to arrays for analysis
+        def vector_to_array(vector: FeatureVector) -> np.ndarray:
+            arr = [
+                vector.probe_refusal_score,
+                vector.probe_acceptance_score,
+                vector.attention_entropy,
+                vector.attention_max_weight,
+                vector.token_entropy,
+                vector.top1_top2_gap,
+            ]
+            for i in range(min(len(vector.layer_activation_norms), 6)):
+                arr.append(vector.layer_activation_norms[i] if i < len(vector.layer_activation_norms) else 0.0)
+            return np.array(arr)
+        
+        baseline_array = np.array([vector_to_array(v) for v in signature_matrix.baseline_vectors])
+        attack_array = np.array([vector_to_array(v) for v in signature_matrix.attack_vectors])
+        
+        universal_features = []
+        
+        for i, feat_name in enumerate(signature_matrix.feature_names):
+            # 1. Check z-score (must be significantly different from baseline)
+            z_score = abs(signature_matrix.z_scores[i]) if signature_matrix.z_scores is not None else 0.0
+            if z_score < z_score_threshold:
+                continue
+            
+            # 2. Check cross-attack stability (must appear in all attack types)
+            cross_attack_stability = {}
+            for attack_type, indices in attack_types.items():
+                if not indices:
+                    continue
+                type_attack_values = attack_array[indices, i]
+                threshold = signature_matrix.baseline_mean[i] + signature_matrix.baseline_std[i]
+                elevated_count = np.sum(type_attack_values > threshold)
+                cross_attack_stability[attack_type] = elevated_count / len(type_attack_values) if len(type_attack_values) > 0 else 0.0
+            
+            # Minimum stability across all attack types
+            min_stability = min(cross_attack_stability.values()) if cross_attack_stability else 0.0
+            if min_stability < cross_attack_stability_threshold:
+                continue
+            
+            # 3. Check false positive rate in baseline (must be low)
+            baseline_values = baseline_array[:, i]
+            threshold = signature_matrix.baseline_mean[i] + signature_matrix.baseline_std[i]
+            false_positives = np.sum(baseline_values > threshold)
+            false_positive_rate = false_positives / len(baseline_values) if len(baseline_values) > 0 else 1.0
+            if false_positive_rate > baseline_false_positive_rate:
+                continue
+            
+            # 4. All checks passed - this is a universal signature
+            universal_features.append({
+                "feature": feat_name,
+                "cross_attack_stability": float(min_stability),
+                "stability_by_type": {k: float(v) for k, v in cross_attack_stability.items()},
+                "z_score": float(signature_matrix.z_scores[i]),
+                "differential": float(signature_matrix.differential_mean[i]),
+                "false_positive_rate": float(false_positive_rate),
+                "baseline_mean": float(signature_matrix.baseline_mean[i]),
+                "attack_mean": float(signature_matrix.attack_mean[i]),
+            })
+        
+        # Sort by combined importance: (cross_attack_stability * z_score) / false_positive_rate
+        universal_features.sort(
+            key=lambda x: (x["cross_attack_stability"] * abs(x["z_score"])) / max(x["false_positive_rate"], 0.01),
+            reverse=True
+        )
+        
+        return {
+            "universal_signatures": universal_features,
+            "num_universal": len(universal_features),
+            "total_features": len(signature_matrix.feature_names),
+            "attack_types_analyzed": list(attack_types.keys()),
+        }
 

@@ -84,7 +84,7 @@ test_outputs/
 htmlcov/
 .tox/
 .nox/
-
+tests/
 # ===================
 # Jupyter Notebooks
 # ===================

@@ -306,6 +306,17 @@ def get_flow_graph_html() -> str:
             letter-spacing: 1px;
         }
 
+        .panel-description {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 400;
+            margin-left: 8px;
+            opacity: 0.8;
+            font-style: italic;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
         .panel-content {
             padding: 20px;
             height: calc(100% - 60px);
@@ -446,26 +457,81 @@ def get_flow_graph_html() -> str:
         }
 
         .layer-btn {
-            padding: 6px 14px;
+            padding: 8px 16px;
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
-            border-radius: 6px;
+            border-radius: 8px;
             color: var(--text-secondary);
             font-size: 12px;
             font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            min-width: 80px;
+        }
+
+        .layer-btn .layer-number {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .layer-btn .layer-label {
+            font-size: 10px;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
         }
 
         .layer-btn:hover {
             border-color: var(--accent-cyan);
             color: var(--accent-cyan);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.2);
         }
 
         .layer-btn.active {
-            background: var(--accent-cyan);
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
             color: var(--bg-primary);
             border-color: var(--accent-cyan);
+            box-shadow: var(--glow-cyan);
+        }
+
+        .layer-btn.active .layer-label {
+            opacity: 1;
+            font-weight: 600;
+        }
+
+        /* Layer tooltip */
+        .layer-btn::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            margin-bottom: 5px;
+        }
+
+        .layer-btn:hover::after {
+            opacity: 1;
+            transform: translateX(-50%) translateY(-12px);
         }
 
         /* Right Panel - Analysis */
@@ -495,18 +561,44 @@ def get_flow_graph_html() -> str:
         .activation-layer {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px;
+            gap: 12px;
+            padding: 12px;
             margin-bottom: 8px;
             background: var(--bg-tertiary);
             border-radius: 8px;
+            border-left: 3px solid transparent;
+            transition: all 0.2s ease;
         }
 
-        .layer-label {
+        .activation-layer:hover {
+            border-left-color: var(--accent-cyan);
+            background: rgba(0, 212, 255, 0.05);
+        }
+
+        .activation-layer:last-child {
+            border-bottom: none;
+        }
+
+        .layer-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 100px;
+            gap: 3px;
+        }
+
+        .layer-info .layer-label {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .layer-info .layer-description {
+            font-size: 10px;
             color: var(--text-muted);
-            width: 50px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
         }
 
         .activation-bars {
@@ -1006,6 +1098,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">📝</span>
                         <span class="panel-title">Input Tokens</span>
+                        <span class="panel-description">Shows input text broken down into vocabulary tokens</span>
                     </div>
                     <div class="panel-content" id="token-container">
                         <div class="loading-hint">
@@ -1019,6 +1112,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">⚡</span>
                         <span class="panel-title">Attack Console</span>
+                        <span class="panel-description">Real-time log messages during attack execution</span>
                     </div>
                     <div class="panel-content">
                         <div class="console-output" id="console-output">
@@ -1040,6 +1134,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">💬</span>
                         <span class="panel-title">Prompt & Response</span>
+                        <span class="panel-description">Shows current attack prompt and model's complete response</span>
                     </div>
                     <div class="panel-content" id="prompt-response-content">
                         <div class="prompt-section">
@@ -1064,6 +1159,7 @@ def get_flow_graph_html() -> str:
                 <div class="panel-header">
                     <span class="panel-icon">🔄</span>
                     <span class="panel-title">Transformer Flow Graph</span>
+                    <span class="panel-description">Visualizes information flow path through model layers</span>
                 </div>
                 <div class="panel-content" style="padding: 0;">
                     <div id="flow-graph"></div>
@@ -1079,6 +1175,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">🎯</span>
                         <span class="panel-title">Attention Pattern</span>
+                        <span class="panel-description">Shows model attention weights, which tokens attend to each other</span>
                         <span class="panel-toggle" onclick="togglePanel(this)">▼</span>
                     </div>
                     <div class="panel-content">
@@ -1102,6 +1199,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">📈</span>
                         <span class="panel-title">Layer Predictions</span>
+                        <span class="panel-description">Shows next token predictions at each layer and probability changes</span>
                         <span class="panel-toggle" onclick="togglePanel(this)">▼</span>
                     </div>
                     <div class="panel-content" id="layer-predictions-content">
@@ -1116,6 +1214,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">📊</span>
                         <span class="panel-title">Layer Analysis</span>
+                        <span class="panel-description">Analyzes refusal and acceptance activation strength at each layer</span>
                         <span class="panel-toggle" onclick="togglePanel(this)">▼</span>
                     </div>
                     <div class="panel-content" id="layer-activations">
@@ -1128,6 +1227,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">🔄</span>
                         <span class="panel-title">SSR Buffer</span>
+                        <span class="panel-description">Shows candidate suffix buffer for sparse sampling replacement attack</span>
                         <span class="panel-toggle" onclick="togglePanel(this)">▼</span>
                     </div>
                     <div class="panel-content">
@@ -1155,6 +1255,7 @@ def get_flow_graph_html() -> str:
                     <div class="panel-header">
                         <span class="panel-icon">🎲</span>
                         <span class="panel-title">Output Predictions</span>
+                        <span class="panel-description">Shows model's next token predictions and probability distribution</span>
                     </div>
                     <div class="panel-content">
                         <div id="output-probs-container">
@@ -1402,9 +1503,13 @@ def get_flow_graph_html() -> str:
                     ? `<span class="delta-indicator ${deltaAcc > 0 ? 'positive' : 'negative'}">${deltaAcc > 0 ? '+' : ''}${(deltaAcc * 100).toFixed(1)}%</span>` 
                     : '';
                 
+                const description = getLayerDescription(i, 12);
                 html += `
                     <div class="activation-layer">
-                        <span class="layer-label">L${i}</span>
+                        <div class="layer-info">
+                            <span class="layer-label">L${i}</span>
+                            <span class="layer-description">${description}</span>
+                        </div>
                         <div class="activation-bars">
                             <div class="activation-bar-container">
                                 <span class="bar-label">Refusal</span>
@@ -1619,13 +1724,62 @@ def get_flow_graph_html() -> str:
             document.getElementById('buffer-n-replace').textContent = state.ssrNReplace || '--';
         }
 
-        // Initialize layer selector
+        // Layer descriptions based on position with detailed meanings
+        function getLayerDescription(layerIdx, totalLayers) {
+            const ratio = layerIdx / Math.max(totalLayers - 1, 1);
+            
+            if (ratio < 0.2) {
+                return "Input";
+            } else if (ratio < 0.4) {
+                return "Early";
+            } else if (ratio < 0.6) {
+                return "Mid";
+            } else if (ratio < 0.8) {
+                return "Late";
+            } else {
+                return "Output";
+            }
+        }
+
+        // Get detailed layer meaning for tooltips
+        function getLayerMeaning(layerIdx, totalLayers) {
+            const ratio = layerIdx / Math.max(totalLayers - 1, 1);
+            
+            if (layerIdx === 0) {
+                return "Token embeddings - Initial input representation";
+            } else if (ratio < 0.2) {
+                return "Input Processing - Early feature extraction";
+            } else if (ratio < 0.4) {
+                return "Early Features - Building semantic understanding";
+            } else if (ratio < 0.6) {
+                return "Mid Processing - Core reasoning and pattern matching";
+            } else if (ratio < 0.8) {
+                return "Late Features - High-level semantic integration";
+            } else if (layerIdx === totalLayers - 1) {
+                return "Output Preparation - Final representation before prediction";
+            } else {
+                return "Output Processing - Preparing final response";
+            }
+        }
+
+        // Initialize layer selector with descriptions
         function initLayerSelector(numLayers) {
             const container = document.getElementById('layer-selector');
             let html = '';
 
             for (let i = 0; i < numLayers; i++) {
-                html += `<button class="layer-btn ${i === 0 ? 'active' : ''}" data-layer="${i}">Layer ${i}</button>`;
+                const description = getLayerDescription(i, numLayers);
+                const meaning = getLayerMeaning(i, numLayers);
+                const tooltip = `Layer ${i}: ${meaning}`;
+                
+                html += `
+                    <button class="layer-btn ${i === 0 ? 'active' : ''}" 
+                            data-layer="${i}" 
+                            data-tooltip="${tooltip}">
+                        <span class="layer-number">L${i}</span>
+                        <span class="layer-label">${description}</span>
+                    </button>
+                `;
             }
 
             container.innerHTML = html;

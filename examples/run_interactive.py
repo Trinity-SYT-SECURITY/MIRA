@@ -94,26 +94,36 @@ def main():
     if trace.layer_states and trace.layer_states[-1].top_predictions:
         token_probs = trace.layer_states[-1].top_predictions
     
-    # Generate attention data (simulated for now)
-    print("  Generating attention patterns...", end=" ", flush=True)
+    # Generate attention data from real trace (NO SIMULATION)
+    print("  Generating attention patterns from real trace...", end=" ", flush=True)
     attention_data = []
     try:
-        tokens = trace.tokens[:15]
-        for layer in [0, model.n_layers // 2, model.n_layers - 1]:
-            for head in [0, 1]:
-                # Get real attention if possible, otherwise simulate
-                attn = np.random.rand(len(tokens), len(tokens))
-                attn = attn / attn.sum(axis=-1, keepdims=True)
-                
-                attention_data.append({
-                    "attention": attn,
-                    "tokens": tokens,
-                    "layer": layer,
-                    "head": head,
-                })
-    except Exception:
-        pass
-    print("DONE")
+        tokens = trace.tokens[:15] if trace.tokens else []
+        
+        # Get real attention from trace if available
+        if hasattr(trace, 'layer_states') and trace.layer_states:
+            for layer_state in trace.layer_states:
+                if hasattr(layer_state, 'attention_weights') and layer_state.attention_weights is not None:
+                    # Use real attention weights from trace
+                    attn = layer_state.attention_weights
+                    if isinstance(attn, np.ndarray):
+                        # Average over heads if multi-head
+                        if attn.ndim == 3:
+                            attn = attn.mean(axis=0)
+                        attention_data.append({
+                            "attention": attn.tolist(),
+                            "tokens": tokens,
+                            "layer": getattr(layer_state, 'layer_idx', 0),
+                            "head": 0,  # Averaged over heads
+                        })
+        
+        # If no attention found in trace, skip (don't simulate)
+        if not attention_data:
+            print("SKIPPED (no real attention data available)")
+        else:
+            print(f"DONE ({len(attention_data)} layers)")
+    except Exception as e:
+        print(f"SKIPPED (error: {str(e)[:50]})")
     
     # Try attack for comparison
     print("  Testing attack bypass...", end=" ", flush=True)

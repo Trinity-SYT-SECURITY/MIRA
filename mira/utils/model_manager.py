@@ -15,11 +15,11 @@ import sys
 # ============================================================
 # MODEL REGISTRY - Role assignments and recommendations
 # ============================================================
-# Roles: target (被攻擊), judge (評估), attacker (攻擊者)
+# Roles: target (victim models), judge (evaluation models), attacker (attack generator models)
 # recommended: True = CPU-friendly and well-tested
 
 MODEL_REGISTRY = {
-    # ========== TARGET MODELS (被攻擊的模型) ==========
+    # ========== TARGET MODELS (Victim Models) ==========
     "HuggingFaceTB/SmolLM2-135M-Instruct": {
         "local_name": "smollm2-135m",
         "role": "target",
@@ -84,7 +84,7 @@ MODEL_REGISTRY = {
         "description": "Alibaba Qwen2, multilingual",
     },
     
-    # ========== JUDGE MODELS (評估模型) ==========
+    # ========== JUDGE MODELS (Evaluation Models) ==========
     "distilbert-base-uncased-finetuned-sst-2-english": {
         "local_name": "distilbert-base-uncased-finetuned-sst-2-english",
         "role": "judge",
@@ -100,7 +100,7 @@ MODEL_REGISTRY = {
         "description": "Toxic content detector",
     },
     
-    # ========== ATTACKER MODELS (攻擊者模型) ==========
+    # ========== ATTACKER MODELS (Attack Generator Models) ==========
     "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
         "local_name": "smollm2-1.7b",
         "role": "attacker",  # Can also be attacker

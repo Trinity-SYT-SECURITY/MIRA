@@ -45,6 +45,25 @@ except ImportError:
     SIGNATURE_VIZ_AVAILABLE = False
     SignatureVisualizer = None
 
+# Comprehensive Visualization
+try:
+    from mira.visualization.comprehensive_viz import ComprehensiveVisualizer
+    COMPREHENSIVE_VIZ_AVAILABLE = True
+except ImportError:
+    COMPREHENSIVE_VIZ_AVAILABLE = False
+    ComprehensiveVisualizer = None
+
+# Cost Visualization
+try:
+    from mira.visualization.cost_viz import (
+        plot_cost_efficiency,
+        plot_cost_breakdown,
+        generate_cost_report,
+    )
+    COST_VIZ_AVAILABLE = True
+except ImportError:
+    COST_VIZ_AVAILABLE = False
+
 __all__ = [
     "plot_subspace_2d",
     "plot_subspace_3d",
@@ -65,4 +84,9 @@ __all__ = [
     "get_detailed_transformer_html",
     "get_flow_graph_html",
     "SignatureVisualizer",
+    "ComprehensiveVisualizer",
+    "plot_cost_efficiency",
+    "plot_cost_breakdown",
+    "generate_cost_report",
 ]
+

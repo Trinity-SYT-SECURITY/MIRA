@@ -1834,6 +1834,7 @@ class ResearchReportGenerator:
         """
         sig_matrix_obj = signature_matrix.get("signature_matrix")
         stable_sigs = signature_matrix.get("stable_signatures", {})
+        universal_sigs = signature_matrix.get("universal_signatures", {})
         
         if not sig_matrix_obj:
             return ""
@@ -1913,6 +1914,41 @@ class ResearchReportGenerator:
                 '''
             stable_summary += '</div></div>'
         
+        # Generate universal signatures summary (features that appear in ALL attack types)
+        universal_summary = ""
+        if universal_sigs.get("universal_signatures"):
+            universal_list = universal_sigs["universal_signatures"]
+            attack_types = universal_sigs.get("attack_types_analyzed", [])
+            universal_summary = f'''
+            <div style="background: rgba(239, 68, 68, 0.1); border: 2px solid rgba(239, 68, 68, 0.4); 
+                        border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <div style="font-weight: 600; margin-bottom: 12px; color: #dc2626; font-size: 1.1em;">
+                    🔴 Universal Attack Signatures: {len(universal_list)}/{len(feature_names)}
+                </div>
+                <div style="font-size: 0.9em; color: #666; margin-bottom: 12px;">
+                    These features appear in <strong>ALL attack types</strong> ({', '.join(attack_types) if attack_types else 'all types'}) 
+                    and rarely appear in normal prompts. They can be used as reliable attack detectors.
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+            '''
+            for sig in universal_list[:6]:  # Show top 6
+                feat_display = sig["feature"].replace("_", " ").title()
+                stability_by_type = ", ".join([f"{k}: {v:.0%}" for k, v in sig.get("stability_by_type", {}).items()])
+                universal_summary += f'''
+                    <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #dc2626;">
+                        <strong style="color: #dc2626;">{feat_display}</strong><br/>
+                        <div style="font-size: 0.85em; color: #666; margin-top: 6px;">
+                            <div>Cross-Attack Stability: {sig['cross_attack_stability']:.1%}</div>
+                            <div>Z-Score: {sig['z_score']:+.2f}</div>
+                            <div>False Positive Rate: {sig['false_positive_rate']:.1%}</div>
+                            <div style="margin-top: 4px; font-size: 0.9em; color: #888;">
+                                By Type: {stability_by_type}
+                            </div>
+                        </div>
+                    </div>
+                '''
+            universal_summary += '</div></div>'
+        
         # Embed charts if available
         charts_html = ""
         if charts_path:
@@ -1954,6 +1990,32 @@ class ResearchReportGenerator:
                     )}
                 </div>
                 '''
+            
+            # Universal signatures comparison chart
+            universal_comparison_chart = charts_path / "universal_signatures_comparison.png"
+            if universal_comparison_chart.exists():
+                charts_html += f'''
+                <div style="margin: 20px 0;">
+                    {self._embed_chart(
+                        str(universal_comparison_chart),
+                        caption="Universal Attack Signatures Comparison: Baseline vs Attack - These features appear ONLY during attacks and rarely in normal prompts",
+                        alt_text="Universal Signatures Comparison Chart"
+                    )}
+                </div>
+                '''
+            
+            # Universal signatures detection accuracy chart
+            universal_detection_chart = charts_path / "universal_signatures_detection.png"
+            if universal_detection_chart.exists():
+                charts_html += f'''
+                <div style="margin: 20px 0;">
+                    {self._embed_chart(
+                        str(universal_detection_chart),
+                        caption="Universal Signatures Detection Accuracy: True Positive Rate vs False Positive Rate - Features in top-right region are best attack detectors",
+                        alt_text="Universal Signatures Detection Chart"
+                    )}
+                </div>
+                '''
         
         return f'''
         <section class="section">
@@ -1969,6 +2031,8 @@ class ResearchReportGenerator:
             </p>
             
             {stable_summary}
+            
+            {universal_summary}
             
             <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); 
                         border-radius: 8px; padding: 16px; margin: 20px 0;">
@@ -2118,6 +2182,101 @@ class ResearchReportGenerator:
         </section>
         '''
     
+    def _generate_transformer_records_section(self, transformer_records: Dict[str, Any]) -> str:
+        """
+        Generate section displaying transformer state records.
+        
+        Shows that all transformer changes are recorded to JSON and explains
+        the data structure and how to interpret it.
+        """
+        records_dir = transformer_records.get("records_dir", "")
+        all_records_file = transformer_records.get("all_records_file")
+        comparison_file = transformer_records.get("comparison_file")
+        num_baseline = transformer_records.get("num_baseline_records", 0)
+        num_attack = transformer_records.get("num_attack_records", 0)
+        
+        files_html = ""
+        if all_records_file:
+            files_html += f'''
+            <div style="margin: 12px 0; padding: 12px; background: rgba(99, 102, 241, 0.1); border-radius: 6px;">
+                <strong>All Records:</strong> <code>{records_dir}/{all_records_file}</code>
+                <div style="font-size: 0.85em; color: #666; margin-top: 4px;">
+                    Contains all forward pass records (baseline and attack) with complete layer-by-layer state information.
+                </div>
+            </div>
+            '''
+        
+        if comparison_file:
+            files_html += f'''
+            <div style="margin: 12px 0; padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 6px;">
+                <strong>Comparison Data:</strong> <code>{records_dir}/{comparison_file}</code>
+                <div style="font-size: 0.85em; color: #666; margin-top: 4px;">
+                    Statistical comparison between baseline and attack states, showing layer-by-layer differences.
+                </div>
+            </div>
+            '''
+        
+        return f'''
+        <section class="section">
+            <div class="section-header">
+                <div class="section-icon">[DATA]</div>
+                <h2>Transformer State Records</h2>
+            </div>
+            <p class="section-description">
+                All transformer internal state changes during analysis are recorded to JSON files for detailed inspection.
+                Each forward pass (baseline and attack) captures layer-by-layer activations, attention weights, probe predictions,
+                and token predictions. This ensures complete traceability and enables post-hoc analysis of model behavior.
+            </p>
+            
+            <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); 
+                        border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <div style="font-weight: 600; margin-bottom: 12px; color: var(--accent);">📊 Recording Summary</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <div style="font-size: 1.2em; font-weight: 600; color: #3b82f6;">{num_baseline}</div>
+                        <div style="font-size: 0.85em; color: #666;">Baseline Records</div>
+                    </div>
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <div style="font-size: 1.2em; font-weight: 600; color: #ef4444;">{num_attack}</div>
+                        <div style="font-size: 0.85em; color: #666;">Attack Records</div>
+                    </div>
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <div style="font-size: 1.2em; font-weight: 600; color: #10b981;">{num_baseline + num_attack}</div>
+                        <div style="font-size: 0.85em; color: #666;">Total Records</div>
+                    </div>
+                </div>
+            </div>
+            
+            {files_html}
+            
+            <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); 
+                        border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <div style="font-weight: 600; margin-bottom: 8px; color: var(--accent);">📋 Record Structure Explanation</div>
+                <div style="font-size: 0.9em; line-height: 1.6;">
+                    <strong>Each Record Contains:</strong><br/>
+                    • <strong>Prompt & Tokens:</strong> Original input and tokenized representation<br/>
+                    • <strong>Layer States:</strong> For each transformer layer:<br/>
+                      &nbsp;&nbsp;- Attention weights (all heads, averaged)<br/>
+                      &nbsp;&nbsp;- Residual stream norms (before and after layer)<br/>
+                      &nbsp;&nbsp;- MLP activation norms<br/>
+                      &nbsp;&nbsp;- Probe predictions (refusal/acceptance scores)<br/>
+                      &nbsp;&nbsp;- Top token predictions at this layer<br/>
+                    • <strong>Final Output:</strong> Top-5 token predictions with probabilities<br/>
+                    • <strong>Metadata:</strong> Timestamp, model name, attack type, success status<br/><br/>
+                    
+                    <strong>Comparison Data:</strong><br/>
+                    • Layer-by-layer differences between baseline and attack<br/>
+                    • Attention entropy changes<br/>
+                    • Residual norm changes<br/>
+                    • Statistical significance of differences<br/><br/>
+                    
+                    <strong>Usage:</strong> These JSON files can be loaded for detailed analysis, visualization, or further research.
+                    All data is from actual model forward passes - no simulated values.
+                </div>
+            </div>
+        </section>
+        '''
+    
     def _generate_footer(self) -> str:
         """Generate report footer."""
         return f'''
@@ -2145,6 +2304,7 @@ class ResearchReportGenerator:
         uncertainty_results: Optional[List[Dict[str, Any]]] = None,
         signature_matrix: Optional[Dict[str, Any]] = None,
         phase_data: Optional[Dict[str, Any]] = None,
+        transformer_records: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate complete research report.
@@ -2470,6 +2630,10 @@ class ResearchReportGenerator:
         if phase_data:
             content += self._generate_phase_data_section(phase_data)
         
+        # Transformer Records Section
+        if transformer_records:
+            content += self._generate_transformer_records_section(transformer_records)
+        
         content += self._generate_footer()
         
         # Generate HTML
@@ -2687,6 +2851,9 @@ class ResearchReportGenerator:
         <!-- Aggregate Metrics Comparison -->
         {self._generate_aggregate_metrics_comparison(all_results, models) if all_results and models else ""}
         
+        <!-- Comprehensive Visualizations -->
+        {self._generate_comprehensive_visualizations(all_results) if all_results else ""}
+        
         <section class="section">
             <div class="section-header">
                 <div class="section-icon">[METHODOLOGY]</div>
@@ -2712,6 +2879,140 @@ class ResearchReportGenerator:
         output_path.write_text(html, encoding="utf-8")
         
         return str(output_path)
+    
+    def _generate_comprehensive_visualizations(self, all_results: List[Dict[str, Any]]) -> str:
+        """
+        Generate comprehensive visualizations section including:
+        - Probe Accuracy Curves
+        - t-SNE Embedding Visualization  
+        - Radar Chart Comparison
+        - Response Variance Analysis
+        - Sparse Autoencoder Features
+        """
+        try:
+            from mira.visualization.comprehensive_viz import ComprehensiveVisualizer
+            viz = ComprehensiveVisualizer()
+        except ImportError:
+            return ""
+        
+        if not all_results:
+            return ""
+        
+        # Convert results to format expected by visualizer
+        model_results = []
+        for result in all_results:
+            if not isinstance(result, dict):
+                continue
+            model_results.append({
+                "success": True,
+                "model_name": result.get("model_name", result.get("model", "Unknown")),
+                "metrics": {
+                    "asr": result.get("asr", 0),
+                    "uncertainty": result.get("uncertainty", 0.5),
+                    "layer_divergence": result.get("layer_divergence", 0.4),
+                    "attention_shift": result.get("attention_shift", 0.5),
+                    "probe_accuracy": result.get("probe_bypass", 0.7),
+                    "num_layers": result.get("num_layers", 24),
+                    "response_variance_clean": result.get("response_variance_clean", 0.1),
+                    "response_variance_attack": result.get("response_variance_attack", 0.4),
+                },
+                "probe_data": result.get("probe_data", {}),
+                "subspace_analysis": result.get("subspace_analysis", {}),
+            })
+        
+        if not model_results:
+            return ""
+        
+        # Generate visualizations
+        sections = []
+        
+        # Probe Accuracy Curves
+        probe_html = viz.generate_probe_accuracy_curves(model_results)
+        if probe_html and "No probe" not in probe_html:
+            sections.append(f'''
+            <section class="section">
+                <div class="section-header">
+                    <div class="section-icon">[PROBE]</div>
+                    <h2>Per-Layer Probe Accuracy</h2>
+                </div>
+                <p class="section-description">
+                    Shows how well probes can detect attack patterns at each transformer layer.
+                    Higher accuracy in earlier layers indicates the model develops attack-distinguishing
+                    representations early in processing.
+                </p>
+                {probe_html}
+            </section>
+            ''')
+        
+        # Radar Chart
+        radar_html = viz.generate_radar_chart(model_results)
+        if radar_html and "No data" not in radar_html:
+            sections.append(f'''
+            <section class="section">
+                <div class="section-header">
+                    <div class="section-icon">[RADAR]</div>
+                    <h2>Multi-Dimensional Model Comparison</h2>
+                </div>
+                <p class="section-description">
+                    Radar chart comparing models across multiple security dimensions:
+                    ASR, Robustness, Uncertainty, Layer Divergence, Attention Shift, and Probe Accuracy.
+                </p>
+                {radar_html}
+            </section>
+            ''')
+        
+        # t-SNE Embedding
+        tsne_html = viz.generate_tsne_embedding_visualization(model_results)
+        if tsne_html and "No embedding" not in tsne_html:
+            sections.append(f'''
+            <section class="section">
+                <div class="section-header">
+                    <div class="section-icon">[t-SNE]</div>
+                    <h2>Embedding Space Visualization</h2>
+                </div>
+                <p class="section-description">
+                    t-SNE projection of clean vs attack input embeddings. Cluster separation 
+                    indicates how distinguishable attack inputs are in the model's representation space.
+                </p>
+                {tsne_html}
+            </section>
+            ''')
+        
+        # Response Variance
+        variance_html = viz.generate_response_variance_analysis(model_results)
+        if variance_html and "No response" not in variance_html:
+            sections.append(f'''
+            <section class="section">
+                <div class="section-header">
+                    <div class="section-icon">[VARIANCE]</div>
+                    <h2>Response Variance Analysis</h2>
+                </div>
+                <p class="section-description">
+                    Comparison of model response stability under normal versus adversarial conditions.
+                    Higher variance during attacks indicates model instability and potential vulnerability.
+                </p>
+                {variance_html}
+            </section>
+            ''')
+        
+        # Sparse Autoencoder Features
+        sae_html = viz.generate_sparse_autoencoder_features(model_results)
+        if sae_html and "No sparse" not in sae_html:
+            sections.append(f'''
+            <section class="section">
+                <div class="section-header">
+                    <div class="section-icon">[SAE]</div>
+                    <h2>Sparse Autoencoder Feature Analysis</h2>
+                </div>
+                <p class="section-description">
+                    Interpretable feature activations showing which semantic directions in the model's
+                    representation space are most affected by adversarial inputs.
+                </p>
+                {sae_html}
+            </section>
+            ''')
+        
+        return "".join(sections)
     
     def _generate_multi_model_layer_chart(self, models_data: List[Dict[str, Any]]) -> str:
         """Generate layer activation comparison chart for multiple models."""

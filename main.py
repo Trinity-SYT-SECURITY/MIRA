@@ -777,6 +777,7 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
     from mira.visualization.live_server import LiveVisualizationServer
     from mira.analysis import SubspaceAnalyzer, TransformerTracer
     from mira.visualization.research_report import ResearchReportGenerator
+    from mira.utils.transformer_recorder import TransformerRecorder
     from datetime import datetime
     from pathlib import Path
     import torch
@@ -875,6 +876,11 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
             layer_idx = wrapper.n_layers // 2
             analyzer = SubspaceAnalyzer(wrapper, layer_idx=layer_idx)
             tracer = TransformerTracer(wrapper)
+            
+            # Initialize transformer recorder to save all state changes to JSON
+            recorder_output_dir = Path("results") / f"model_{model_name.replace('/', '_')}" / "transformer_records"
+            recorder_output_dir.mkdir(parents=True, exist_ok=True)
+            recorder = TransformerRecorder(output_dir=str(recorder_output_dir))
             
             # Train probe (correct method name is train_probe, not train_from_prompts)
             probe_result = analyzer.train_probe(safe_prompts, harmful_prompts)
@@ -1029,10 +1035,21 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                 except:
                     pass
             
-            # Capture clean attention (first safe prompt)
+            # Capture clean attention (first safe prompt) and record to JSON
+            baseline_records = []
             if safe_prompts:
                 try:
+                    # Record baseline forward pass
+                    recorder.start_forward_pass(
+                        prompt=safe_prompts[0],
+                        is_attack=False,
+                        model_name=model_name,
+                    )
+                    
                     clean_ids = wrapper.tokenizer.encode(safe_prompts[0], return_tensors="pt")[0]
+                    tokens = [wrapper.tokenizer.decode([tid]) for tid in clean_ids]
+                    recorder.record_tokens(tokens, clean_ids)
+                    
                     clean_trace = tracer.trace_forward(clean_ids)
                     if clean_trace and clean_trace.layers:
                         mid_layer = len(clean_trace.layers) // 2
@@ -1044,18 +1061,61 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                                     # Get first head: [num_heads, seq_len, seq_len] -> [seq_len, seq_len]
                                     baseline_clean_attention = attn[0].detach().cpu().numpy().tolist()
                         
-                        # Capture layer activations
+                        # Capture layer activations and record each layer state
                         for l_idx, l_data in enumerate(clean_trace.layers):
                             if hasattr(l_data, 'residual_post') and l_data.residual_post is not None:
                                 norm = float(torch.norm(l_data.residual_post).cpu())
                                 clean_layer_activations.append(norm / 100.0)  # Normalize
-                except Exception:
+                                
+                                # Record layer state to JSON
+                                probe_refusal = None
+                                probe_acceptance = None
+                                if hasattr(analyzer, 'probe') and analyzer.probe is not None:
+                                    try:
+                                        act_input = l_data.residual_post[-1:, :] if l_data.residual_post.dim() == 2 else l_data.residual_post[0, -1:, :]
+                                        with torch.no_grad():
+                                            probe_pred = torch.sigmoid(analyzer.probe(act_input.to(analyzer.probe.linear.weight.device)))
+                                            probe_refusal = float(probe_pred[0, 0].item())
+                                            probe_acceptance = 1.0 - probe_refusal
+                                    except:
+                                        pass
+                                
+                                recorder.record_layer_state(
+                                    layer_idx=l_idx,
+                                    attention_weights=l_data.attention_weights if hasattr(l_data, 'attention_weights') else None,
+                                    residual_pre=l_data.residual_pre if hasattr(l_data, 'residual_pre') else None,
+                                    residual_post=l_data.residual_post,
+                                    mlp_activation=l_data.mlp_intermediate if hasattr(l_data, 'mlp_intermediate') else None,
+                                    probe_refusal=probe_refusal,
+                                    probe_acceptance=probe_acceptance,
+                                )
+                        
+                        # Finish and save baseline record
+                        baseline_record = recorder.finish_forward_pass(num_layers=len(clean_trace.layers))
+                        if baseline_record:
+                            baseline_records.append(baseline_record)
+                            recorder.save_record(baseline_record)
+                except Exception as e:
+                    if verbose:
+                        print(f"      Note: Baseline recording error: {str(e)[:50]}")
                     pass
             
-            # Capture attack attention (first harmful prompt)
+            # Capture attack attention (first harmful prompt) and record to JSON
+            attack_records = []
             if harmful_prompts:
                 try:
+                    # Record attack forward pass
+                    recorder.start_forward_pass(
+                        prompt=harmful_prompts[0],
+                        is_attack=True,
+                        attack_type="baseline_capture",
+                        model_name=model_name,
+                    )
+                    
                     attack_ids = wrapper.tokenizer.encode(harmful_prompts[0], return_tensors="pt")[0]
+                    tokens = [wrapper.tokenizer.decode([tid]) for tid in attack_ids]
+                    recorder.record_tokens(tokens, attack_ids)
+                    
                     attack_trace = tracer.trace_forward(attack_ids)
                     if attack_trace and attack_trace.layers:
                         mid_layer = len(attack_trace.layers) // 2
@@ -1067,12 +1127,43 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                                     # Get first head: [num_heads, seq_len, seq_len] -> [seq_len, seq_len]
                                     baseline_attack_attention = attn[0].detach().cpu().numpy().tolist()
                         
-                        # Capture layer activations
+                        # Capture layer activations and record each layer state
                         for l_idx, l_data in enumerate(attack_trace.layers):
                             if hasattr(l_data, 'residual_post') and l_data.residual_post is not None:
                                 norm = float(torch.norm(l_data.residual_post).cpu())
                                 attack_layer_activations.append(norm / 100.0)
-                except Exception:
+                                
+                                # Record layer state to JSON
+                                probe_refusal = None
+                                probe_acceptance = None
+                                if hasattr(analyzer, 'probe') and analyzer.probe is not None:
+                                    try:
+                                        act_input = l_data.residual_post[-1:, :] if l_data.residual_post.dim() == 2 else l_data.residual_post[0, -1:, :]
+                                        with torch.no_grad():
+                                            probe_pred = torch.sigmoid(analyzer.probe(act_input.to(analyzer.probe.linear.weight.device)))
+                                            probe_refusal = float(probe_pred[0, 0].item())
+                                            probe_acceptance = 1.0 - probe_refusal
+                                    except:
+                                        pass
+                                
+                                recorder.record_layer_state(
+                                    layer_idx=l_idx,
+                                    attention_weights=l_data.attention_weights if hasattr(l_data, 'attention_weights') else None,
+                                    residual_pre=l_data.residual_pre if hasattr(l_data, 'residual_pre') else None,
+                                    residual_post=l_data.residual_post,
+                                    mlp_activation=l_data.mlp_intermediate if hasattr(l_data, 'mlp_intermediate') else None,
+                                    probe_refusal=probe_refusal,
+                                    probe_acceptance=probe_acceptance,
+                                )
+                        
+                        # Finish and save attack record
+                        attack_record = recorder.finish_forward_pass(num_layers=len(attack_trace.layers))
+                        if attack_record:
+                            attack_records.append(attack_record)
+                            recorder.save_record(attack_record)
+                except Exception as e:
+                    if verbose:
+                        print(f"      Note: Attack recording error: {str(e)[:50]}")
                     pass
             
             if verbose and clean_layer_activations:
@@ -1264,7 +1355,34 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                     
                     for attack_type in attack_types[:2]:  # Limit for speed
                         prompt_count += 1
+                        
+                        # Record transformer state during attack
+                        try:
+                            recorder.start_forward_pass(
+                                prompt=prompt,
+                                is_attack=True,
+                                attack_type=attack_type,
+                                model_name=model_name,
+                            )
+                        except:
+                            pass
+                        
                         attack_result = prompt_attacker.attack(prompt, attack_type, max_new_tokens=100)
+                        
+                        # Record attack response and finish recording
+                        try:
+                            if attack_result.response:
+                                recorder.record_final_output(
+                                    logits=torch.zeros(1, 1),  # Placeholder, actual logits from trace if available
+                                    tokenizer=tokenizer,
+                                    response=attack_result.response,
+                                )
+                            attack_record = recorder.finish_forward_pass(success=attack_result.success if attack_result.response else None)
+                            if attack_record:
+                                recorder.save_record(attack_record)
+                                attack_records.append(attack_record)
+                        except:
+                            pass
                         
                         if attack_result.response:
                             metric = evaluator.evaluate_single(prompt, attack_result.response)
@@ -2316,9 +2434,26 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                         z_score_threshold=1.5,
                     )
                     
+                    # Identify universal attack signatures (appear in ALL attack types)
+                    universal_sigs = sig_analyzer.identify_universal_attack_signatures(
+                        signature_matrix,
+                        cross_attack_stability_threshold=0.8,  # Must appear in 80%+ of each attack type
+                        z_score_threshold=1.5,
+                        baseline_false_positive_rate=0.1,  # Max 10% false positive in baseline
+                    )
+                    
+                    # Identify universal attack signatures (appear in ALL attack types)
+                    universal_sigs = sig_analyzer.identify_universal_attack_signatures(
+                        signature_matrix,
+                        cross_attack_stability_threshold=0.8,  # Must appear in 80%+ of each attack type
+                        z_score_threshold=1.5,
+                        baseline_false_positive_rate=0.1,  # Max 10% false positive in baseline
+                    )
+                    
                     signature_matrix_result = {
                         "signature_matrix": signature_matrix,
                         "stable_signatures": stable_sigs,
+                        "universal_signatures": universal_sigs,  # Features that appear in ALL attack types
                         "num_features": len(signature_matrix.feature_names),
                         "num_baseline": len(signature_matrix.baseline_vectors),
                         "num_attacks": len(signature_matrix.attack_vectors),
@@ -2355,6 +2490,27 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                         if stable_path:
                             signature_charts["stable"] = stable_path
                     
+                    # Universal signatures comparison (baseline vs attack)
+                    if universal_sigs.get("universal_signatures"):
+                        universal_comparison_path = sig_viz.plot_universal_signatures_comparison(
+                            signature_matrix,
+                            universal_sigs,
+                            title=f"Universal Attack Signatures: Baseline vs Attack - {model_name}",
+                            save_name="universal_signatures_comparison",
+                        )
+                        if universal_comparison_path:
+                            signature_charts["universal_comparison"] = universal_comparison_path
+                        
+                        # Detection accuracy plot
+                        detection_path = sig_viz.plot_universal_signatures_detection_accuracy(
+                            signature_matrix,
+                            universal_sigs,
+                            title=f"Universal Signatures Detection Accuracy - {model_name}",
+                            save_name="universal_signatures_detection",
+                        )
+                        if detection_path:
+                            signature_charts["universal_detection"] = detection_path
+                    
                     if verbose:
                         print(f"      ✓ Signature Matrix: {len(signature_matrix.feature_names)} features")
                         print(f"      ✓ Stable signatures: {stable_sigs.get('num_stable', 0)}/{len(signature_matrix.feature_names)}")
@@ -2368,6 +2524,24 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                     print(f"      ⚠ Signature Matrix analysis skipped: {e}")
                 import traceback
                 traceback.print_exc()
+            
+            # Include transformer records in report if available
+            transformer_records_dir = output_dir / "transformer_records"
+            transformer_records_info = None
+            if transformer_records_dir.exists():
+                try:
+                    all_records_file = transformer_records_dir / "all_transformer_records.json"
+                    comparison_file = transformer_records_dir / "baseline_vs_attack_comparison.json"
+                    
+                    transformer_records_info = {
+                        "records_dir": str(transformer_records_dir.relative_to(output_dir)),
+                        "all_records_file": str(all_records_file.name) if all_records_file.exists() else None,
+                        "comparison_file": str(comparison_file.name) if comparison_file.exists() else None,
+                        "num_baseline_records": len(list(transformer_records_dir.glob("baseline_*.json"))),
+                        "num_attack_records": len(list(transformer_records_dir.glob("attack_*.json"))),
+                    }
+                except Exception:
+                    pass
             
             report_path = report_gen.generate_report(
                 title=f"MIRA Analysis: {model_name}",
@@ -2384,6 +2558,7 @@ def run_single_model_analysis(model_name: str, num_attacks: int = 5, verbose: bo
                 },
                 charts_dir=str(charts_dir),
                 signature_matrix=results.get("signature_matrix"),
+                transformer_records=transformer_records_info,
             )
             
             results["report_path"] = str(report_path)
@@ -2415,12 +2590,22 @@ def main():
     TOTAL_PHASES = 7 # Define TOTAL_PHASES early as it's used in print_phase calls
     
     # ================================================================
-    # FIRST-RUN SETUP: MODEL DIRECTORY
+    # INTERACTIVE MODEL MANAGEMENT SYSTEM
+    # ================================================================
+    # Check for models in HuggingFace cache and project/models
+    # Offer to migrate models for unified management
+    from mira.utils.interactive_model_manager import ModelManager
+    
+    model_manager_interactive = ModelManager()
+    setup_result = model_manager_interactive.interactive_model_setup()
+    
+    # ================================================================
+    # LEGACY MODEL MANAGER (for downloading)
     # ================================================================
     from mira.utils.model_manager import setup_models, get_model_manager
     
     # Setup models directory (first-run only)
-    models_dir = setup_models(interactive=True)
+    models_dir = setup_models(interactive=False)  # Non-interactive since we already did setup
     model_manager = get_model_manager()
     
     # Check if any models are downloaded

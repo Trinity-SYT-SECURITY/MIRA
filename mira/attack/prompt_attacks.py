@@ -11,8 +11,6 @@ Categories:
 - Roleplay - Character/persona injection
 - Logic - Reasoning exploitation
 - Social - Authority/urgency manipulation
-
-Based on patterns from garak, TAP, and other research.
 """
 
 from typing import List, Dict, Any, Optional
