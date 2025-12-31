@@ -10,12 +10,14 @@
 ## 🌟 Key Features
 
 ### Security Testing
+
 - **19 Security Probes**: Jailbreak, encoding, injection, social engineering, continuation attacks
 - **Gradient-Based Attacks**: GCG (Greedy Coordinate Gradient) optimization
 - **SSR Attacks**: Subspace Steering Routing for targeted manipulation
 - **Multi-Model Comparison**: Test across 10+ pre-configured models
 
 ### Mechanistic Interpretability
+
 - **Activation Hooks**: Capture internal model states at any layer
 - **Logit Lens**: Visualize prediction formation across layers
 - **Uncertainty Analysis**: Entropy, confidence, and risk detection
@@ -23,6 +25,7 @@
 - **Reverse Search**: Find inputs that trigger specific activations
 
 ### Evaluation & Reporting
+
 - **Dual Judge System**: ML-based (DistilBERT + Toxic-BERT) + Keyword-based
 - **Live Dashboard**: Real-time visualization during testing
 - **Research Reports**: Academic-quality HTML reports with embedded charts
@@ -42,6 +45,10 @@ cd MIRA
 # Activate pyenv virtual environment (if using pyenv)
 pyenv activate mira-venv
 
+#or creat venv
+python -m venv mira-venv
+\mira-venv\Scripts\activate
+
 # Install dependencies
 pip install -r requirements.txt
 
@@ -52,6 +59,7 @@ python main.py
 ### First-Run Setup
 
 On first run, MIRA will:
+
 1. **Ask where to store models** (default: `project/models/`)
 2. **Offer to download starter models** (gpt2, pythia-70m, pythia-160m)
 3. **Show interactive mode selection menu**
@@ -65,7 +73,9 @@ That's it! No complex configuration needed.
 MIRA offers 5 interactive modes:
 
 ### Mode 1: Standard Security Testing (Default)
+
 Full pipeline with live visualization:
+
 - Environment detection
 - Subspace analysis (probe training)
 - Gradient-based attacks
@@ -78,7 +88,9 @@ python main.py
 ```
 
 ### Mode 2: Multi-Model Comparison
+
 Compare attack success rates across multiple models:
+
 - 10 pre-configured models (GPT-2, Pythia, TinyLlama, etc.)
 - Configurable model size filter
 - Automated testing and ranking
@@ -92,28 +104,34 @@ python main.py
 ```
 
 ### Mode 3: Mechanistic Analysis Tools
+
 Deep analysis of model internals:
 
 **Logit Lens**: Track prediction evolution across layers
+
 ```bash
 python main.py
 # Select 3 → Analysis type: 1
 ```
 
 **Uncertainty Analysis**: Entropy, confidence, risk detection
+
 ```bash
 python main.py
 # Select 3 → Analysis type: 2
 ```
 
 **Activation Hooks**: Capture internal activations
+
 ```bash
 python main.py
 # Select 3 → Analysis type: 3
 ```
 
 ### Mode 4: SSR Optimization
+
 Advanced subspace steering attack optimization:
+
 - Extract refusal direction from contrastive prompts
 - Optimize adversarial suffix using subspace loss
 - Minimize projection onto refusal subspace
@@ -126,7 +144,9 @@ python main.py
 ```
 
 ### Mode 5: Download Models
+
 Batch download models from HuggingFace:
+
 - 10 pre-configured models
 - Size filtering
 - Automatic storage in `project/models/`
@@ -205,6 +225,7 @@ mira/
 ### Model Storage
 
 Models are centralized in `project/models/`:
+
 ```
 project/models/
 ├── gpt2/
@@ -217,6 +238,7 @@ Configuration saved in `.mira_config.json`
 ### Attack Parameters
 
 Edit `config.yaml` to customize:
+
 - Number of attack steps
 - Learning rate
 - Suffix length
@@ -229,18 +251,18 @@ Edit `config.yaml` to customize:
 
 ### Pre-configured for Comparison
 
-| Model | Size | Architecture | Use Case |
-|-------|------|--------------|----------|
-| GPT-2 Small | 0.5 GB | GPT-2 | Fast testing |
-| GPT-2 Medium | 1.5 GB | GPT-2 | Baseline |
-| Pythia-70M | 0.3 GB | NeoX | Very small |
-| Pythia-160M | 0.6 GB | NeoX | Small capable |
-| Pythia-410M | 1.6 GB | NeoX | Medium |
-| GPT-Neo-125M | 0.5 GB | NeoX | Alternative |
-| TinyLlama-1.1B | 4.4 GB | Llama | Compact Llama |
-| SmolLM2-135M | 0.5 GB | Llama | Modern small |
-| SmolLM2-360M | 1.4 GB | Llama | Modern medium |
-| Qwen2-0.5B | 1.2 GB | Qwen | Chinese-capable |
+| Model          | Size   | Architecture | Use Case        |
+| -------------- | ------ | ------------ | --------------- |
+| GPT-2 Small    | 0.5 GB | GPT-2        | Fast testing    |
+| GPT-2 Medium   | 1.5 GB | GPT-2        | Baseline        |
+| Pythia-70M     | 0.3 GB | NeoX         | Very small      |
+| Pythia-160M    | 0.6 GB | NeoX         | Small capable   |
+| Pythia-410M    | 1.6 GB | NeoX         | Medium          |
+| GPT-Neo-125M   | 0.5 GB | NeoX         | Alternative     |
+| TinyLlama-1.1B | 4.4 GB | Llama        | Compact Llama   |
+| SmolLM2-135M   | 0.5 GB | Llama        | Modern small    |
+| SmolLM2-360M   | 1.4 GB | Llama        | Modern medium   |
+| Qwen2-0.5B     | 1.2 GB | Qwen         | Chinese-capable |
 
 All models automatically downloaded and cached in `project/models/`
 
@@ -260,16 +282,19 @@ All models automatically downloaded and cached in `project/models/`
 ## 🎯 Research Applications
 
 ### Security Testing
+
 - Evaluate LLM safety mechanisms
 - Discover vulnerabilities across models
 - Compare defense effectiveness
 
 ### Mechanistic Interpretability
+
 - Understand internal representations
 - Identify safety-critical components
 - Analyze prediction formation
 
 ### Attack Development
+
 - Optimize adversarial prompts
 - Test subspace steering
 - Develop novel attack vectors
@@ -279,16 +304,19 @@ All models automatically downloaded and cached in `project/models/`
 ## 🔬 Technical Highlights
 
 ### Gradient-Based Attacks
+
 - **GCG**: Token-level gradient optimization
 - **Top-k Selection**: Efficient candidate search
 - **Early Stopping**: Automatic convergence detection
 
 ### Subspace Analysis
+
 - **Linear Probes**: 100% accuracy on safety classification
 - **PCA Visualization**: 2D projection of activation space
 - **Direction Extraction**: Mathematical refusal vectors
 
 ### Evaluation System
+
 - **ML Judge**: DistilBERT + Toxic-BERT ensemble
 - **Keyword Evaluator**: Pattern-based fallback
 - **Confidence Weighting**: Probabilistic verdicts
@@ -325,6 +353,7 @@ Probe Testing:
 ## 🤝 Contributing
 
 Contributions welcome! Please:
+
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
@@ -341,6 +370,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## 🙏 Acknowledgments
 
 MIRA is a completely self-implemented framework. Concepts inspired by:
+
 - Mechanistic interpretability research
 - Adversarial machine learning
 - LLM safety evaluation
@@ -358,9 +388,9 @@ All code written from scratch with no external attribution.
 
 ## 🚦 Status
 
-**Current Version**: v1.0-dev  
-**Status**: Production Ready ✅  
-**Total Code**: ~3,000 lines  
+**Current Version**: v1.0-dev
+**Status**: Production Ready ✅
+**Total Code**: ~3,000 lines
 **Last Updated**: 2025-12-30
 
 ### Recent Updates

@@ -25,4 +25,4 @@ flask-cors>=4.0.0
 psutil
 # Optional: Datasets
 # datasets>=2.0.0
-# huggingface-hub>=0.20.0
+huggingface-hub>=0.20.0  # Required for direct model downloads

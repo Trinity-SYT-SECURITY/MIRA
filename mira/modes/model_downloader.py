@@ -230,16 +230,28 @@ def download_judge_models(downloaded, manager, download_dir=None):
         try:
             # Download to project/models
             model_dir = manager.models_dir / m['hf_name'].replace('/', '_')
+            model_dir.mkdir(parents=True, exist_ok=True)
             
             if 'sentence-transformers' in m['hf_name']:
                 from sentence_transformers import SentenceTransformer
                 model = SentenceTransformer(m['hf_name'])
                 model.save(str(model_dir))
             else:
-                tokenizer = AutoTokenizer.from_pretrained(m['hf_name'])
-                model = AutoModel.from_pretrained(m['hf_name'])
-                tokenizer.save_pretrained(str(model_dir))
-                model.save_pretrained(str(model_dir))
+                # Use snapshot_download to download directly to target directory
+                try:
+                    from huggingface_hub import snapshot_download
+                    snapshot_download(
+                        repo_id=m['hf_name'],
+                        local_dir=str(model_dir),
+                        local_dir_use_symlinks=False,
+                        ignore_patterns=["*.msgpack", "*.h5", "*.ot"],
+                    )
+                except ImportError:
+                    # Fallback to old method if huggingface_hub not available
+                    tokenizer = AutoTokenizer.from_pretrained(m['hf_name'])
+                    model = AutoModel.from_pretrained(m['hf_name'])
+                    tokenizer.save_pretrained(str(model_dir))
+                    model.save_pretrained(str(model_dir))
             
             print(f"  ✓ {m['name']} downloaded")
         except Exception as e:

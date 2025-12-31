@@ -167,7 +167,70 @@ class ModelManager:
         
         # Load or create config
         self.config = self._load_config()
-        self.models_dir = Path(self.config.get("models_directory", str(self.default_models_dir)))
+        
+        # Validate saved models directory (cross-platform compatible)
+        saved_dir = self.config.get("models_directory")
+        if saved_dir:
+            saved_platform = self.config.get("models_directory_platform", "")
+            current_platform = self._get_platform_id()
+            
+            try:
+                saved_path = Path(saved_dir)
+                
+                # Check if path was saved on different platform
+                if saved_platform and saved_platform != current_platform:
+                    # Try relative path first (cross-platform compatible)
+                    if not saved_path.is_absolute():
+                        # Relative path - resolve relative to project root
+                        self.models_dir = (self.project_root / saved_path).resolve()
+                    else:
+                        # Absolute path from different platform - silently use default
+                        # All paths are dynamically computed, no hardcoded paths
+                        self.models_dir = self.default_models_dir
+                else:
+                    # Same platform or no platform info
+                    # Try relative path first
+                    if not saved_path.is_absolute():
+                        test_path = (self.project_root / saved_path).resolve()
+                    else:
+                        test_path = saved_path.resolve()
+                    
+                    # Validate the path
+                    if test_path.exists() or test_path.parent.exists():
+                        self.models_dir = test_path
+                    else:
+                        # Invalid path, silently use default (all paths are dynamic)
+                        self.models_dir = self.default_models_dir
+                        
+            except (OSError, ValueError) as e:
+                # Path is invalid, silently use default (all paths are dynamically computed)
+                self.models_dir = self.default_models_dir
+        else:
+            self.models_dir = self.default_models_dir
+    
+    def _get_platform_id(self) -> str:
+        """Get platform identifier for cross-platform path detection."""
+        import platform
+        import sys
+        return f"{platform.system()}_{platform.machine()}_{sys.platform}"
+        
+        # Ensure directory exists
+        try:
+            self.models_dir.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            # Fallback to a safe directory
+            print(f"⚠️  Warning: Cannot create models directory: {self.models_dir}")
+            print(f"   Error: {e}")
+            try:
+                fallback_dir = Path.home() / "MIRA_models"
+                fallback_dir.mkdir(parents=True, exist_ok=True)
+                self.models_dir = fallback_dir
+                print(f"   Using fallback directory: {fallback_dir}")
+            except Exception:
+                # Last resort: use current directory
+                self.models_dir = Path.cwd() / "models"
+                self.models_dir.mkdir(parents=True, exist_ok=True)
+                print(f"   Using current directory: {self.models_dir}")
     
     def _load_config(self) -> Dict[str, Any]:
         """Load MIRA configuration."""
@@ -315,32 +378,57 @@ class ModelManager:
             print(f"  Downloading {model_name}...")
         
         try:
-            # Download tokenizer
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_name,
-                cache_dir=str(model_path),
-            )
-            
-            # Download model
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                cache_dir=str(model_path),
-            )
-            
-            # Save to local directory
-            tokenizer.save_pretrained(str(model_path))
-            model.save_pretrained(str(model_path))
-            
-            if verbose:
-                print(f"    ✓ {model_name} downloaded to {model_path}")
-            
-            # Clean up
-            del model, tokenizer
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            
-            return True
+            # Use snapshot_download to download directly to target directory
+            # This bypasses HuggingFace cache and downloads directly to model_path
+            try:
+                from huggingface_hub import snapshot_download
+                
+                # Ensure directory exists
+                model_path.mkdir(parents=True, exist_ok=True)
+                
+                # Download directly to target directory
+                snapshot_download(
+                    repo_id=model_name,
+                    local_dir=str(model_path),
+                    local_dir_use_symlinks=False,  # Copy files instead of symlinks
+                    ignore_patterns=["*.msgpack", "*.h5", "*.ot"],  # Skip unnecessary files
+                )
+                
+                if verbose:
+                    print(f"    ✓ {model_name} downloaded to {model_path}")
+                
+                return True
+            except ImportError:
+                # Fallback to old method if huggingface_hub not available
+                if verbose:
+                    print(f"    ⚠️  Using fallback download method (may use cache)...")
+                
+                # Download tokenizer
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_name,
+                    cache_dir=str(model_path),
+                )
+                
+                # Download model
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    cache_dir=str(model_path),
+                )
+                
+                # Save to local directory
+                tokenizer.save_pretrained(str(model_path))
+                model.save_pretrained(str(model_path))
+                
+                if verbose:
+                    print(f"    ✓ {model_name} downloaded to {model_path}")
+                
+                # Clean up
+                del model, tokenizer
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                return True
             
         except Exception as e:
             if verbose:
