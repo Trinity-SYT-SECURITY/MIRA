@@ -15,28 +15,6 @@ import json
 class ModelManager:
     """Manages model storage, detection, and migration."""
     
-    # Required models for MIRA to function
-    REQUIRED_MODELS = [
-        {
-            "name": "gpt2",
-            "description": "Small language model for testing",
-            "size_estimate_mb": 500,
-            "optional": False,
-        },
-        {
-            "name": "distilbert-base-uncased-finetuned-sst-2-english",
-            "description": "Judge model for safety evaluation",
-            "size_estimate_mb": 250,
-            "optional": False,
-        },
-        {
-            "name": "sentence-transformers/all-MiniLM-L6-v2",
-            "description": "Embedding model for similarity analysis",
-            "size_estimate_mb": 90,
-            "optional": True,
-        },
-    ]
-    
     def __init__(self, project_models_dir: Optional[Path] = None):
         """
         Initialize model manager.
@@ -54,6 +32,58 @@ class ModelManager:
         
         # Detect HuggingFace cache directory
         self.hf_cache_dir = self._detect_hf_cache()
+    
+    def get_required_models_from_registry(self) -> List[Dict[str, Any]]:
+        """
+        Get required models from MODEL_REGISTRY based on roles.
+        
+        Returns:
+            List of required model dicts with role information
+        """
+        from mira.utils.model_manager import MODEL_REGISTRY, get_recommended_models
+        
+        required_models = []
+        
+        # Get recommended models for each role
+        target_models = get_recommended_models(role="target")
+        judge_models = get_recommended_models(role="judge")
+        attacker_models = get_recommended_models(role="attacker")
+        
+        # Add recommended target models (at least one required)
+        if target_models:
+            for model in target_models[:3]:  # Top 3 recommended
+                required_models.append({
+                    "name": model["hf_name"],
+                    "local_name": model["local_name"],
+                    "description": f"{model['description']} ({model['size']})",
+                    "role": "target",
+                    "optional": not model.get("recommended", False),
+                })
+        
+        # Add all recommended judge models (critical for evaluation)
+        for model in judge_models:
+            if model.get("recommended"):
+                required_models.append({
+                    "name": model["hf_name"],
+                    "local_name": model["local_name"],
+                    "description": f"{model['description']} ({model['size']})",
+                    "role": "judge",
+                    "optional": False,  # Judges are always required
+                })
+        
+        # Add recommended attacker models (optional)
+        if attacker_models:
+            for model in attacker_models[:1]:  # At least one attacker
+                if model.get("recommended"):
+                    required_models.append({
+                        "name": model["hf_name"],
+                        "local_name": model["local_name"],
+                        "description": f"{model['description']} ({model['size']})",
+                        "role": "attacker",
+                        "optional": True,
+                    })
+        
+        return required_models
     
     def _detect_hf_cache(self) -> Optional[Path]:
         """Detect HuggingFace cache directory."""
@@ -153,12 +183,13 @@ class ModelManager:
     
     def check_required_models(self) -> Tuple[List[Dict], List[Dict]]:
         """
-        Check which required models are missing.
+        Check which required models are missing using MODEL_REGISTRY.
         
         Returns:
             Tuple of (missing_models, available_models)
         """
-        from mira.utils.model_manager import MODEL_REGISTRY
+        # Get required models from registry
+        required_models = self.get_required_models_from_registry()
         
         # Get all available models (project + HF cache)
         project_models = self.scan_project_models()
@@ -167,7 +198,6 @@ class ModelManager:
         available_names = set()
         for m in project_models:
             available_names.add(m["name"])
-            # Also add HF format
             available_names.add(m["name"].replace("/", "--"))
         
         for m in hf_models:
@@ -177,12 +207,15 @@ class ModelManager:
         missing = []
         available = []
         
-        for req_model in self.REQUIRED_MODELS:
+        for req_model in required_models:
             model_name = req_model["name"]
+            local_name = req_model.get("local_name", model_name.replace("/", "--"))
+            
             # Check various name formats
             name_variants = [
                 model_name,
                 model_name.replace("/", "--"),
+                local_name,
                 model_name.split("/")[-1],  # Just model name without org
             ]
             
@@ -329,12 +362,30 @@ class ModelManager:
         
         if missing_required:
             print("\n⚠️  Missing Required Models:")
-            for req in missing_required:
-                optional_tag = " (optional)" if req.get("optional") else " (required)"
-                print(f"   • {req['name']}{optional_tag}")
-                print(f"     {req['description']} (~{req['size_estimate_mb']} MB)")
             
-            download_choice = input("\nDownload missing required models? (y/n): ").strip().lower()
+            # Group by role for better display
+            by_role = {}
+            for req in missing_required:
+                role = req.get("role", "other")
+                if role not in by_role:
+                    by_role[role] = []
+                by_role[role].append(req)
+            
+            # Display by role
+            role_names = {
+                "target": "Target Models (Victim models for testing)",
+                "judge": "Judge Models (Evaluation & safety)",
+                "attacker": "Attacker Models (Attack generation)"
+            }
+            
+            for role, models in by_role.items():
+                print(f"\n   {role_names.get(role, role.upper())}:")
+                for req in models:
+                    optional_tag = " [optional]" if req.get("optional") else " [required]"
+                    print(f"      • {req['name']}{optional_tag}")
+                    print(f"        {req['description']}")
+            
+            download_choice = input("\n\nDownload missing required models? (y/n): ").strip().lower()
             if download_choice == 'y':
                 # Ask for download location
                 print("\nWhere should we download the models?")
@@ -353,9 +404,30 @@ class ModelManager:
                     download_dir.mkdir(parents=True, exist_ok=True)
                 
                 if download_dir:
+                    print(f"\n📥 Downloading to: {download_dir}\n")
+                    downloaded_count = 0
                     for req in missing_required:
+                        # Only auto-download required models
                         if not req.get("optional"):
-                            self.download_model(req["name"], download_dir)
+                            if self.download_model(req["name"], download_dir):
+                                downloaded_count += 1
+                            print()  # Blank line between downloads
+                    
+                    # Ask about optional models
+                    optional_models = [m for m in missing_required if m.get("optional")]
+                    if optional_models:
+                        print(f"\n{len(optional_models)} optional models available:")
+                        for opt in optional_models:
+                            print(f"   • {opt['name']} ({opt['role']})")
+                        
+                        opt_choice = input("\nDownload optional models too? (y/n): ").strip().lower()
+                        if opt_choice == 'y':
+                            for opt in optional_models:
+                                if self.download_model(opt["name"], download_dir):
+                                    downloaded_count += 1
+                                print()
+                    
+                    print(f"\n✅ Downloaded {downloaded_count} models")
         
         # Offer migration
         print(f"\n🔄 Found {len(hf_only_models)} models in HuggingFace cache not in project:")
