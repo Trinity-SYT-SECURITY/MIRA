@@ -29,7 +29,7 @@ MODEL_REGISTRY = {
     },
     "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
         "local_name": "smollm2-1.7b",
-        "role": "target",
+        "role": ["target", "attacker"],  # Can be used for both roles
         "recommended": True,
         "size": "1.7B",
         "description": "Mid-size SmolLM, good CPU performance",
@@ -99,15 +99,6 @@ MODEL_REGISTRY = {
         "size": "110M",
         "description": "Toxic content detector",
     },
-    
-    # ========== ATTACKER MODELS (Attack Generator Models) ==========
-    "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
-        "local_name": "smollm2-1.7b",
-        "role": "attacker",  # Can also be attacker
-        "recommended": True,
-        "size": "1.7B",
-        "description": "Can generate attack prompts",
-    },
 }
 
 
@@ -123,11 +114,25 @@ def get_recommended_models(role: str = None) -> List[Dict[str, Any]]:
     """
     models = []
     for hf_name, info in MODEL_REGISTRY.items():
-        if role is None or info.get("role") == role:
+        if role is None:
             models.append({
                 "hf_name": hf_name,
                 **info
             })
+        else:
+            # Support both single role (string) and multiple roles (list)
+            model_role = info.get("role")
+            if isinstance(model_role, list):
+                if role in model_role:
+                    models.append({
+                        "hf_name": hf_name,
+                        **info
+                    })
+            elif model_role == role:
+                models.append({
+                    "hf_name": hf_name,
+                    **info
+                })
     return models
 
 

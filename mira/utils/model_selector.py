@@ -110,7 +110,16 @@ def get_available_target_models() -> List[ModelInfo]:
             if hf_name_used:
                 info = get_model_info(hf_name_used)
         
-        if info and info.get("role") == "target":
+        if info:
+            # Check if this is a target model (support both single role and list of roles)
+            model_role = info.get("role")
+            is_target = False
+            if isinstance(model_role, list):
+                is_target = "target" in model_role
+            else:
+                is_target = model_role == "target"
+            
+            if is_target:
             # Create ModelInfo from registry
             size = info.get("size", "?")
             recommended = info.get("recommended", False)
