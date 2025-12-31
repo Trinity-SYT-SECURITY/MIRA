@@ -64,6 +64,19 @@ try:
 except ImportError:
     COST_VIZ_AVAILABLE = False
 
+# Heatmap Visualization (Three-tier ASR)
+try:
+    from mira.visualization.heatmap_viz import (
+        plot_layer_feature_heatmap,
+        plot_attack_comparison_heatmap,
+        plot_feature_consistency_map,
+        plot_tiered_asr_chart,
+        generate_comprehensive_heatmap_report,
+    )
+    HEATMAP_VIZ_AVAILABLE = True
+except ImportError:
+    HEATMAP_VIZ_AVAILABLE = False
+
 __all__ = [
     "plot_subspace_2d",
     "plot_subspace_3d",
