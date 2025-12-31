@@ -204,6 +204,71 @@ def get_flow_graph_html() -> str:
             font-family: 'JetBrains Mono', monospace;
         }
 
+        /* Loading Hint Styles */
+        .loading-hint {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: var(--text-muted);
+            text-align: center;
+            gap: 12px;
+        }
+
+        .loading-hint .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--border-color);
+            border-top: 2px solid var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-hint .hint-text {
+            font-size: 12px;
+            line-height: 1.5;
+            max-width: 200px;
+        }
+
+        .loading-hint .hint-icon {
+            font-size: 24px;
+            opacity: 0.7;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .loading-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: linear-gradient(135deg, rgba(0,212,255,0.1), rgba(139,92,246,0.1));
+            border: 1px solid rgba(0,212,255,0.3);
+            border-radius: 20px;
+            font-size: 10px;
+            color: var(--accent-cyan);
+            animation: pulse 2s infinite;
+        }
+
+        .loading-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
         /* Main Layout - Full width responsive */
         .main-layout {
             display: grid;
@@ -943,9 +1008,9 @@ def get_flow_graph_html() -> str:
                         <span class="panel-title">Input Tokens</span>
                     </div>
                     <div class="panel-content" id="token-container">
-                        <div class="token-item">
-                            <span class="token-index">0</span>
-                            <span class="token-text">Waiting for input...</span>
+                        <div class="loading-hint">
+                            <div class="spinner"></div>
+                            <span class="hint-text">⏳ Tokens will appear when attack starts</span>
                         </div>
                     </div>
                 </div>
@@ -979,11 +1044,15 @@ def get_flow_graph_html() -> str:
                     <div class="panel-content" id="prompt-response-content">
                         <div class="prompt-section">
                             <div class="section-label">Current Prompt</div>
-                            <div class="prompt-text" id="current-prompt">Waiting for attack...</div>
+                            <div class="prompt-text" id="current-prompt">
+                                <span class="loading-badge">⏳ Waiting for attack</span>
+                            </div>
                         </div>
                         <div class="response-section">
                             <div class="section-label">Model Response</div>
-                            <div class="response-text" id="current-response">--</div>
+                            <div class="response-text" id="current-response">
+                                <span style="color: var(--text-muted);">Response will appear after attack completes</span>
+                            </div>
                             <div class="response-status" id="response-status">--</div>
                         </div>
                     </div>
@@ -1036,8 +1105,9 @@ def get_flow_graph_html() -> str:
                         <span class="panel-toggle" onclick="togglePanel(this)">▼</span>
                     </div>
                     <div class="panel-content" id="layer-predictions-content">
-                        <div style="color: var(--text-muted); text-align: center; padding: 20px;">
-                            Waiting for layer predictions...
+                        <div class="loading-hint">
+                            <div class="spinner"></div>
+                            <span class="hint-text">📊 Layer predictions will update during analysis (may take time on CPU)</span>
                         </div>
                     </div>
                 </div>
@@ -1272,10 +1342,16 @@ def get_flow_graph_html() -> str:
             if (!matrix || matrix.length === 0) {
                 ctx.fillStyle = '#1a1a24';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = '#64748b';
-                ctx.font = '12px Inter';
+                
+                // Draw loading indicator
+                ctx.fillStyle = '#00d4ff';
+                ctx.font = '14px Inter';
                 ctx.textAlign = 'center';
-                ctx.fillText('Waiting for attention data...', canvas.width / 2, canvas.height / 2);
+                ctx.fillText('⏳ Attention Pattern', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.fillStyle = '#64748b';
+                ctx.font = '11px Inter';
+                ctx.fillText('Data will appear when attack runs', canvas.width / 2, canvas.height / 2 + 5);
+                ctx.fillText('(may take time on CPU)', canvas.width / 2, canvas.height / 2 + 22);
                 return;
             }
 
@@ -1372,7 +1448,7 @@ def get_flow_graph_html() -> str:
             });
 
             if (probs.length === 0) {
-                html = '<div style="color: var(--text-muted); text-align: center;">Waiting for predictions...</div>';
+                html = '<div class="loading-hint"><div class="spinner"></div><span class="hint-text">🔮 Predictions will appear during attack</span></div>';
             }
 
             container.innerHTML = html;
@@ -1397,7 +1473,7 @@ def get_flow_graph_html() -> str:
             });
 
             if (tokens.length === 0) {
-                html = '<div class="token-item"><span class="token-text">Waiting for input...</span></div>';
+                html = '<div class="loading-hint"><div class="spinner"></div><span class="hint-text">⏳ Tokens will appear when attack starts</span></div>';
             }
 
             container.innerHTML = html;
@@ -1472,7 +1548,7 @@ def get_flow_graph_html() -> str:
             const predictions = state.layerPredictions;
             
             if (Object.keys(predictions).length === 0) {
-                container.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">Waiting for layer predictions...</div>';
+                container.innerHTML = '<div class="loading-hint"><div class="spinner"></div><span class="hint-text">📊 Layer predictions will update during analysis (may take time on CPU)</span></div>';
                 return;
             }
             
