@@ -42,6 +42,23 @@ current_phase_state: Dict = {
     "progress": 0.0,
 }
 
+# Global state for attack progress (for late-connecting clients)
+current_attack_state: Dict = {
+    "step": 0,
+    "loss": 0.0,
+    "suffix": "",
+    "success": False,
+    "prompt": None,
+    "asr": 0.0,
+    "response": None,
+}
+
+# Global state for embeddings (for late-connecting clients)
+current_embeddings_state: Dict = {
+    "tokens": [],
+    "embeddings": [],
+}
+
 
 @dataclass
 class VisualizationEvent:
@@ -106,6 +123,22 @@ class LiveVisualizationServer:
                             data=current_phase_state
                         )
                         yield f"event: phase\ndata: {phase_event.to_json()}\n\n"
+                    
+                    # Send current attack state for late-connecting clients
+                    if current_attack_state and current_attack_state.get("prompt"):
+                        attack_event = VisualizationEvent(
+                            event_type="attack_step",
+                            data=current_attack_state
+                        )
+                        yield f"event: attack_step\ndata: {attack_event.to_json()}\n\n"
+                    
+                    # Send current embeddings for late-connecting clients
+                    if current_embeddings_state and current_embeddings_state.get("tokens"):
+                        embeddings_event = VisualizationEvent(
+                            event_type="embeddings",
+                            data=current_embeddings_state
+                        )
+                        yield f"event: embeddings\ndata: {embeddings_event.to_json()}\n\n"
                     
                     # Send initial status
                     status_event = VisualizationEvent(
@@ -275,6 +308,18 @@ class LiveVisualizationServer:
         response: str = None,
     ):
         """Send attack optimization step with ASR tracking."""
+        # Update global state for late-connecting clients
+        global current_attack_state
+        current_attack_state = {
+            "step": step,
+            "loss": loss,
+            "suffix": suffix,
+            "success": success,
+            "prompt": prompt if prompt else current_attack_state.get("prompt"),
+            "asr": asr,
+            "response": response,
+        }
+        
         event = VisualizationEvent(
             event_type="attack_step",
             data={
@@ -310,6 +355,13 @@ class LiveVisualizationServer:
         embeddings: List[List[float]],  # [seq_len, hidden_dim]
     ):
         """Send token embeddings."""
+        # Update global state for late-connecting clients
+        global current_embeddings_state
+        current_embeddings_state = {
+            "tokens": tokens,
+            "embeddings": embeddings,
+        }
+        
         event = VisualizationEvent(
             event_type="embeddings",
             data={
