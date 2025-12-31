@@ -65,7 +65,7 @@ models/
 # HuggingFace cache
 .cache/
 ~/.cache/huggingface/
-mira-venv/
+mira-venv/*
 # ===================
 # Generated Outputs (DO NOT UPLOAD)
 # ===================
