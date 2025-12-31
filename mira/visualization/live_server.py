@@ -33,6 +33,15 @@ except ImportError:
 # Global event queue for streaming
 event_queue: Queue = Queue()
 
+# Global state for late-connecting clients
+current_phase_state: Dict = {
+    "current": 0,
+    "total": 7,
+    "name": "Waiting for analysis...",
+    "detail": "Connect to server to begin",
+    "progress": 0.0,
+}
+
 
 @dataclass
 class VisualizationEvent:
@@ -82,26 +91,84 @@ class LiveVisualizationServer:
         def events():
             """SSE endpoint for real-time events."""
             def generate():
-                # Send initial connection event
-                yield f"data: {json.dumps({'event_type': 'connected', 'data': {}})}\n\n"
-                
-                while True:
-                    try:
-                        event = event_queue.get(timeout=1.0)
-                        yield f"data: {event.to_json()}\n\n"
-                    except:
-                        # Send heartbeat ping to keep connection alive
-                        yield f"data: {json.dumps({'event_type': 'ping', 'data': {}})}\n\n"
+                try:
+                    # Send initial connection event immediately
+                    connected_event = VisualizationEvent(
+                        event_type="connected",
+                        data={"message": "Connected to MIRA server", "timestamp": time.time()}
+                    )
+                    yield f"event: connected\ndata: {connected_event.to_json()}\n\n"
+                    
+                    # Send current phase state for late-connecting clients
+                    if current_phase_state:
+                        phase_event = VisualizationEvent(
+                            event_type="phase",
+                            data=current_phase_state
+                        )
+                        yield f"event: phase\ndata: {phase_event.to_json()}\n\n"
+                    
+                    # Send initial status
+                    status_event = VisualizationEvent(
+                        event_type="status",
+                        data={
+                            "server_running": True,
+                            "events_pending": event_queue.qsize(),
+                            "message": "Waiting for attack data..."
+                        }
+                    )
+                    yield f"event: status\ndata: {status_event.to_json()}\n\n"
+                    
+                    ping_count = 0
+                    while True:
+                        try:
+                            event = event_queue.get(timeout=1.0)
+                            # Send event with proper SSE format: event: <type>\ndata: <json>\n\n
+                            # This allows addEventListener to work correctly
+                            event_json = event.to_json()
+                            yield f"event: {event.event_type}\ndata: {event_json}\n\n"
+                            ping_count = 0  # Reset ping counter on real event
+                        except:
+                            # Send heartbeat ping to keep connection alive
+                            ping_count += 1
+                            ping_event = VisualizationEvent(
+                                event_type="ping",
+                                data={"count": ping_count, "timestamp": time.time()}
+                            )
+                            yield f"event: ping\ndata: {ping_event.to_json()}\n\n"
+                except GeneratorExit:
+                    # Client disconnected - gracefully close the generator
+                    return
+                except Exception as e:
+                    # Log other errors but don't crash
+                    import sys
+                    print(f"SSE generator error: {e}", file=sys.stderr)
+                    return
             
             response = Response(generate(), mimetype="text/event-stream")
             response.headers['Cache-Control'] = 'no-cache'
             response.headers['Connection'] = 'keep-alive'
             response.headers['X-Accel-Buffering'] = 'no'
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Headers'] = 'Cache-Control'
             return response
         
         @self.app.route("/api/status")
         def status():
-            return jsonify({"status": "running", "events_pending": event_queue.qsize()})
+            return jsonify({
+                "status": "running", 
+                "events_pending": event_queue.qsize(),
+                "server_running": self.running,
+                "port": self.port
+            })
+        
+        @self.app.route("/api/test")
+        def test():
+            """Test endpoint to verify server is running."""
+            return jsonify({
+                "message": "MIRA visualization server is running",
+                "timestamp": time.time(),
+                "events_pending": event_queue.qsize()
+            })
     
     def start(self, open_browser: bool = True):
         """Start the visualization server."""
@@ -205,6 +272,7 @@ class LiveVisualizationServer:
         success: bool = False,
         prompt: str = None,
         asr: float = 0.0,
+        response: str = None,
     ):
         """Send attack optimization step with ASR tracking."""
         event = VisualizationEvent(
@@ -216,6 +284,7 @@ class LiveVisualizationServer:
                 "success": success,
                 "prompt": prompt,
                 "asr": asr,
+                "response": response,
             }
         )
         event_queue.put(event)
@@ -530,6 +599,16 @@ class LiveVisualizationServer:
         """
         if progress is None:
             progress = (current / total) * 100
+        
+        # Update global state for late-connecting clients
+        global current_phase_state
+        current_phase_state = {
+            "current": current,
+            "total": total,
+            "name": name,
+            "detail": detail,
+            "progress": progress,
+        }
             
         event = VisualizationEvent(
             event_type="phase",

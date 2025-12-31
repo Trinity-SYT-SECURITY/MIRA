@@ -105,7 +105,7 @@ class ModelWrapper:
             self.model = AutoModelForCausalLM.from_pretrained(
                 load_path,
                 cache_dir=cache_dir,
-                torch_dtype=self.dtype,
+                dtype=self.dtype,  # Changed from torch_dtype to dtype (deprecated warning fix)
                 trust_remote_code=True,
                 attn_implementation="eager",  # Enable output_attentions
             ).to(self.device)

@@ -37,6 +37,14 @@ from mira.visualization.flow_graph_viz import (
     get_flow_graph_html,
 )
 
+# Signature Matrix Visualization
+try:
+    from mira.visualization.signature_viz import SignatureVisualizer
+    SIGNATURE_VIZ_AVAILABLE = True
+except ImportError:
+    SIGNATURE_VIZ_AVAILABLE = False
+    SignatureVisualizer = None
+
 __all__ = [
     "plot_subspace_2d",
     "plot_subspace_3d",
@@ -56,4 +64,5 @@ __all__ = [
     "get_transformer_attack_html",
     "get_detailed_transformer_html",
     "get_flow_graph_html",
+    "SignatureVisualizer",
 ]

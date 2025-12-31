@@ -260,22 +260,38 @@ Question: {prompt}"""
         # Generate response if model available
         if self.model and self.tokenizer:
             try:
-                inputs = self.tokenizer(result.attack_prompt, return_tensors="pt")
-                device = next(self.model.parameters()).device
-                inputs = {k: v.to(device) for k, v in inputs.items()}
-                
-                import torch
-                with torch.no_grad():
-                    outputs = self.model.generate(
-                        **inputs,
+                # Check if model is ModelWrapper or raw model
+                if hasattr(self.model, 'device'):
+                    # ModelWrapper - use its device and generate method
+                    device = self.model.device
+                    # Use ModelWrapper's generate method (returns List[str])
+                    responses = self.model.generate(
+                        result.attack_prompt,
                         max_new_tokens=max_new_tokens,
-                        do_sample=True,
                         temperature=0.7,
-                        pad_token_id=self.tokenizer.eos_token_id,
+                        do_sample=True,
                     )
+                    # ModelWrapper.generate returns List[str], take first
+                    response = responses[0] if isinstance(responses, list) and responses else str(responses) if responses else ""
+                else:
+                    # Raw model - use original logic
+                    inputs = self.tokenizer(result.attack_prompt, return_tensors="pt")
+                    device = next(self.model.parameters()).device
+                    inputs = {k: v.to(device) for k, v in inputs.items()}
+                    
+                    import torch
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            **inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            pad_token_id=self.tokenizer.eos_token_id,
+                        )
+                    
+                    response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
                 
-                response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-                # Remove the prompt from response
+                # Remove the prompt from response if it's included
                 if result.attack_prompt in response:
                     response = response.split(result.attack_prompt)[-1].strip()
                 

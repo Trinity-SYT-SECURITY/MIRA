@@ -96,7 +96,12 @@ def plot_subspace_2d(
     plt.tight_layout()
     
     if save_path:
+        from pathlib import Path
+        # Ensure directory exists
+        save_path_obj = Path(save_path)
+        save_path_obj.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)  # Close figure to free memory and ensure file is written
     
     return fig
 

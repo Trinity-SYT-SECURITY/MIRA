@@ -38,6 +38,20 @@ from mira.analysis.reverse_search import (
     extract_refusal_direction,
 )
 
+# Signature Matrix Analysis
+try:
+    from mira.analysis.signature_matrix import (
+        SignatureMatrixAnalyzer,
+        SignatureMatrix,
+        FeatureVector,
+    )
+    SIGNATURE_MATRIX_AVAILABLE = True
+except ImportError:
+    SIGNATURE_MATRIX_AVAILABLE = False
+    SignatureMatrixAnalyzer = None
+    SignatureMatrix = None
+    FeatureVector = None
+
 __all__ = [
     # Existing
     "SubspaceAnalyzer",
@@ -71,4 +85,8 @@ __all__ = [
     "ReverseActivationSearch",
     "SSROptimizer",
     "extract_refusal_direction",
+    # Signature Matrix
+    "SignatureMatrixAnalyzer",
+    "SignatureMatrix",
+    "FeatureVector",
 ]

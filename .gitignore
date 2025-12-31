@@ -105,6 +105,7 @@ desktop.ini
 *.secret
 secrets/
 config.local.yaml
+.mira_config.json
 
 # ===================
 # Temporary Files

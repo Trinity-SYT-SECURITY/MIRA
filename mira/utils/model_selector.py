@@ -1,14 +1,16 @@
 """
 Model Selector - Interactive model selection based on system capabilities
 
-Detects GPU availability and recommends appropriate models.
+Now only shows target models (victim models) that are actually downloaded.
+Judge models are automatically configured.
 """
 
 import torch
 import platform
 import psutil
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -23,163 +25,175 @@ class ModelInfo:
     difficulty: str  # "easy", "medium", "hard"
     description: str
     category: str  # "tiny", "small", "medium", "large", "chat"
+    local_name: Optional[str] = None  # Local directory name
 
 
-# Model catalog
-MODEL_CATALOG = [
-    # Tiny models (CPU friendly)
-    ModelInfo(
-        name="EleutherAI/pythia-70m",
-        display_name="Pythia 70M",
-        params="70M",
-        min_ram_gb=2,
-        min_vram_gb=0,
-        speed="fast",
-        difficulty="easy",
-        description="Fastest, best for quick testing",
-        category="tiny"
-    ),
-    ModelInfo(
-        name="EleutherAI/pythia-160m",
-        display_name="Pythia 160M",
-        params="160M",
-        min_ram_gb=2,
-        min_vram_gb=0,
-        speed="fast",
-        difficulty="easy",
-        description="Small but capable",
-        category="tiny"
-    ),
+def get_available_target_models() -> List[ModelInfo]:
+    """
+    Get list of target models that are actually downloaded in project/models/.
+    Only returns models with role='target' from MODEL_REGISTRY.
+    """
+    from mira.utils.model_manager import get_model_manager, MODEL_REGISTRY, get_model_info
     
-    # Small models
-    ModelInfo(
-        name="gpt2",
-        display_name="GPT-2",
-        params="124M",
-        min_ram_gb=2,
-        min_vram_gb=0,
-        speed="fast",
-        difficulty="easy",
-        description="Classic baseline model",
-        category="small"
-    ),
-    ModelInfo(
-        name="EleutherAI/pythia-410m",
-        display_name="Pythia 410M",
-        params="410M",
-        min_ram_gb=4,
-        min_vram_gb=0,
-        speed="medium",
-        difficulty="easy",
-        description="Good balance for CPU",
-        category="small"
-    ),
-    ModelInfo(
-        name="gpt2-medium",
-        display_name="GPT-2 Medium",
-        params="355M",
-        min_ram_gb=4,
-        min_vram_gb=0,
-        speed="medium",
-        difficulty="easy",
-        description="Larger GPT-2 variant",
-        category="small"
-    ),
+    manager = get_model_manager()
+    downloaded = manager.list_downloaded_models()
     
-    # Medium models (GPU recommended)
-    ModelInfo(
-        name="EleutherAI/pythia-1b",
-        display_name="Pythia 1B",
-        params="1B",
-        min_ram_gb=8,
-        min_vram_gb=4,
-        speed="medium",
-        difficulty="medium",
-        description="Research standard",
-        category="medium"
-    ),
-    ModelInfo(
-        name="EleutherAI/pythia-1.4b",
-        display_name="Pythia 1.4B",
-        params="1.4B",
-        min_ram_gb=8,
-        min_vram_gb=6,
-        speed="medium",
-        difficulty="medium",
-        description="Best balance for GPU",
-        category="medium"
-    ),
-    ModelInfo(
-        name="EleutherAI/gpt-neo-1.3B",
-        display_name="GPT-Neo 1.3B",
-        params="1.3B",
-        min_ram_gb=8,
-        min_vram_gb=6,
-        speed="medium",
-        difficulty="medium",
-        description="Alternative architecture",
-        category="medium"
-    ),
+    # Filter to only target models (not judge models)
+    JUDGE_MODELS = [
+        "distilbert-base-uncased-finetuned-sst-2-english",
+        "unitary/toxic-bert",
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "BAAI/bge-base-en-v1.5",
+        "distilbert-sst2",
+        "toxic-bert",
+    ]
     
-    # Large models (Strong GPU required)
-    ModelInfo(
-        name="EleutherAI/pythia-2.8b",
-        display_name="Pythia 2.8B",
-        params="2.8B",
-        min_ram_gb=16,
-        min_vram_gb=8,
-        speed="slow",
-        difficulty="medium",
-        description="Larger research model",
-        category="large"
-    ),
-    ModelInfo(
-        name="EleutherAI/gpt-j-6b",
-        display_name="GPT-J 6B",
-        params="6B",
-        min_ram_gb=16,
-        min_vram_gb=12,
-        speed="slow",
-        difficulty="medium",
-        description="Popular research model",
-        category="large"
-    ),
-    ModelInfo(
-        name="EleutherAI/pythia-6.9b",
-        display_name="Pythia 6.9B",
-        params="6.9B",
-        min_ram_gb=16,
-        min_vram_gb=14,
-        speed="slow",
-        difficulty="hard",
-        description="Large research model",
-        category="large"
-    ),
+    # Convert judge model names to local names for filtering
+    judge_local_names = set()
+    for judge in JUDGE_MODELS:
+        info = get_model_info(judge)
+        if info:
+            judge_local_names.add(info.get("local_name", judge))
+        # Also add variations
+        judge_local_names.add(judge.replace("/", "--"))
+        judge_local_names.add(judge.replace("--", "/"))
+        # Add direct local name matches
+        if "/" in judge:
+            judge_local_names.add(judge.split("/")[-1])
     
-    # Chat models (Safety aligned)
-    ModelInfo(
-        name="meta-llama/Llama-2-7b-chat-hf",
-        display_name="Llama 2 Chat 7B",
-        params="7B",
-        min_ram_gb=16,
-        min_vram_gb=16,
-        speed="slow",
-        difficulty="hard",
-        description="Safety-aligned, hardest to attack",
-        category="chat"
-    ),
-    ModelInfo(
-        name="mistralai/Mistral-7B-Instruct-v0.2",
-        display_name="Mistral 7B Instruct",
-        params="7B",
-        min_ram_gb=16,
-        min_vram_gb=16,
-        speed="slow",
-        difficulty="hard",
-        description="Modern instruction-tuned model",
-        category="chat"
-    ),
-]
+    # Filter out judge models and datasets
+    target_models = []
+    for model_dir in downloaded:
+        # Skip judge models and datasets
+        if model_dir in judge_local_names or model_dir == "alpaca":
+            continue
+        
+        # Get model info from registry
+        info = None
+        hf_name_used = None
+        for hf_name, reg_info in MODEL_REGISTRY.items():
+            if reg_info.get("local_name") == model_dir:
+                info = reg_info
+                hf_name_used = hf_name
+                break
+        
+        # If not found in registry, try to infer from local name
+        if not info:
+            # Try common patterns
+            if "pythia" in model_dir.lower():
+                if "160m" in model_dir:
+                    hf_name_used = "EleutherAI/pythia-160m"
+                elif "70m" in model_dir:
+                    hf_name_used = "EleutherAI/pythia-70m"
+            elif "qwen" in model_dir.lower():
+                if "2.5-3B" in model_dir or "2.5-3b" in model_dir:
+                    hf_name_used = "Qwen/Qwen2.5-3B"
+                elif "0.5B" in model_dir or "0.5b" in model_dir:
+                    hf_name_used = "Qwen/Qwen2-0.5B"
+            elif "gpt2" in model_dir.lower():
+                if "medium" in model_dir:
+                    hf_name_used = "gpt2-medium"
+                elif "distil" in model_dir:
+                    hf_name_used = "distilgpt2"
+                else:
+                    hf_name_used = "gpt2"
+            elif "smollm2" in model_dir.lower():
+                if "1.7b" in model_dir or "1.7B" in model_dir:
+                    hf_name_used = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+                elif "135m" in model_dir or "135M" in model_dir:
+                    hf_name_used = "HuggingFaceTB/SmolLM2-135M-Instruct"
+            elif "tinyllama" in model_dir.lower():
+                hf_name_used = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+            elif "deepseek" in model_dir.lower():
+                hf_name_used = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+            
+            if hf_name_used:
+                info = get_model_info(hf_name_used)
+        
+        if info and info.get("role") == "target":
+            # Create ModelInfo from registry
+            size = info.get("size", "?")
+            recommended = info.get("recommended", False)
+            
+            # Map size to params
+            params = size
+            
+            # Determine speed and difficulty based on size
+            if "M" in size:
+                size_num = float(size.replace("M", ""))
+                if size_num < 200:
+                    speed = "fast"
+                    difficulty = "easy"
+                    min_ram = 2
+                elif size_num < 500:
+                    speed = "fast"
+                    difficulty = "easy"
+                    min_ram = 4
+                else:
+                    speed = "medium"
+                    difficulty = "easy"
+                    min_ram = 4
+            elif "B" in size or "b" in size:
+                size_num = float(size.replace("B", "").replace("b", ""))
+                if size_num < 2:
+                    speed = "medium"
+                    difficulty = "easy"
+                    min_ram = 4
+                elif size_num < 5:
+                    speed = "medium"
+                    difficulty = "medium"
+                    min_ram = 8
+                else:
+                    speed = "slow"
+                    difficulty = "medium"
+                    min_ram = 8
+            else:
+                speed = "medium"
+                difficulty = "easy"
+                min_ram = 4
+            
+            # Determine category
+            if "M" in size and float(size.replace("M", "")) < 200:
+                category = "tiny"
+            elif "M" in size:
+                category = "small"
+            elif "B" in size or "b" in size:
+                size_num = float(size.replace("B", "").replace("b", ""))
+                if size_num < 2:
+                    category = "small"
+                elif size_num < 5:
+                    category = "medium"
+                else:
+                    category = "large"
+            else:
+                category = "small"
+            
+            model_info = ModelInfo(
+                name=hf_name_used,
+                display_name=info.get("description", hf_name_used).split(",")[0] if info.get("description") else hf_name_used.split("/")[-1],
+                params=params,
+                min_ram_gb=min_ram,
+                min_vram_gb=0,  # CPU-friendly
+                speed=speed,
+                difficulty=difficulty,
+                description=info.get("description", ""),
+                category=category,
+                local_name=model_dir,
+            )
+            target_models.append(model_info)
+    
+    # Sort by size (smallest first for CPU)
+    def sort_key(m):
+        if "M" in m.params:
+            return float(m.params.replace("M", ""))
+        elif "B" in m.params or "b" in m.params:
+            return float(m.params.replace("B", "").replace("b", "")) * 1000
+        else:
+            return 999
+    
+    target_models.sort(key=sort_key)
+    
+    return target_models
 
 
 class ModelSelector:
@@ -210,11 +224,11 @@ class ModelSelector:
         
         print("="*60 + "\n")
     
-    def get_compatible_models(self) -> List[ModelInfo]:
-        """Get models compatible with current system."""
+    def get_compatible_models(self, available_models: List[ModelInfo]) -> List[ModelInfo]:
+        """Get models compatible with current system from available models."""
         compatible = []
         
-        for model in MODEL_CATALOG:
+        for model in available_models:
             # Check RAM
             if model.min_ram_gb > self.ram_gb:
                 continue
@@ -228,15 +242,15 @@ class ModelSelector:
         
         return compatible
     
-    def get_recommended_models(self) -> Tuple[List[ModelInfo], List[ModelInfo]]:
-        """Get recommended and advanced models."""
-        compatible = self.get_compatible_models()
+    def get_recommended_models(self, available_models: List[ModelInfo]) -> Tuple[List[ModelInfo], List[ModelInfo]]:
+        """Get recommended and advanced models from available models."""
+        compatible = self.get_compatible_models(available_models)
         
-        # Recommended: easy/medium difficulty
-        recommended = [m for m in compatible if m.difficulty in ["easy", "medium"]]
+        # Recommended: easy/medium difficulty, smaller models
+        recommended = [m for m in compatible if m.difficulty in ["easy", "medium"] and m.category in ["tiny", "small"]]
         
-        # Advanced: hard difficulty or large models
-        advanced = [m for m in compatible if m.difficulty == "hard" or m.category == "large"]
+        # Advanced: larger models or hard difficulty
+        advanced = [m for m in compatible if m.difficulty == "hard" or m.category in ["medium", "large"]]
         
         return recommended, advanced
     
@@ -264,31 +278,51 @@ class ModelSelector:
             else:
                 diff_icon = "⭐⭐⭐"
             
-            print(f"\n  [{i}] {model.display_name} ({model.params})")
+            # Show local name if different
+            local_info = f" ({model.local_name})" if model.local_name and model.local_name != model.name.split("/")[-1] else ""
+            
+            print(f"\n  [{i}] {model.display_name} ({model.params}){local_info}")
             print(f"      {speed_icon} Speed: {model.speed.capitalize()}  |  {diff_icon} Difficulty: {model.difficulty.capitalize()}")
             print(f"      💾 RAM: {model.min_ram_gb}GB", end="")
             if model.min_vram_gb > 0:
                 print(f"  |  🎮 VRAM: {model.min_vram_gb}GB", end="")
             print()
-            print(f"      📝 {model.description}")
+            if model.description:
+                print(f"      📝 {model.description}")
     
     def select_model(self) -> str:
-        """Interactive model selection."""
+        """Interactive model selection - only shows downloaded target models."""
         self.print_system_info()
         
-        recommended, advanced = self.get_recommended_models()
+        # Get available target models from project/models/
+        available_models = get_available_target_models()
         
-        if not recommended and not advanced:
-            print("❌ No compatible models found for your system!")
-            print("   Minimum requirement: 2GB RAM")
+        if not available_models:
+            print("❌ No target models found in project/models/!")
+            print("   Please download models first (Mode 5)")
+            print("   Recommended: smollm2-135m, tinyllama-1.1b, gpt2-medium")
             return "EleutherAI/pythia-70m"  # Fallback
         
+        recommended, advanced = self.get_recommended_models(available_models)
+        
+        # If no recommended, use all compatible
+        if not recommended and not advanced:
+            compatible = self.get_compatible_models(available_models)
+            if compatible:
+                recommended = compatible[:3]
+                advanced = compatible[3:]
+            else:
+                print("❌ No compatible models found for your system!")
+                print("   Minimum requirement: 2GB RAM")
+                return available_models[0].name  # Fallback to first available
+        
         # Print recommended models
-        self.print_model_list(recommended, "🎯 RECOMMENDED MODELS")
+        if recommended:
+            self.print_model_list(recommended, "🎯 RECOMMENDED MODELS (Downloaded)")
         
         # Print advanced models
         if advanced:
-            self.print_model_list(advanced, "🚀 ADVANCED MODELS (Harder to attack)")
+            self.print_model_list(advanced, "🚀 ADVANCED MODELS (Downloaded)")
         
         # Get user choice
         all_models = recommended + advanced
@@ -296,6 +330,8 @@ class ModelSelector:
         print("\n" + "="*60)
         print(f"  Enter number (1-{len(all_models)}) or press Enter for default")
         print("="*60)
+        print("\n  💡 Judge models are automatically configured")
+        print("     (distilbert, toxic-bert, sentence-transformers)")
         
         while True:
             try:
@@ -304,13 +340,13 @@ class ModelSelector:
                 if not choice:
                     # Default: first recommended model
                     default_model = recommended[0] if recommended else all_models[0]
-                    print(f"\n  ✓ Using default: {default_model.display_name}")
+                    print(f"\n  ✓ Using default: {default_model.display_name} ({default_model.name})")
                     return default_model.name
                 
                 idx = int(choice) - 1
                 if 0 <= idx < len(all_models):
                     selected = all_models[idx]
-                    print(f"\n  ✓ Selected: {selected.display_name}")
+                    print(f"\n  ✓ Selected: {selected.display_name} ({selected.name})")
                     
                     # Warn if challenging
                     if selected.difficulty == "hard":
@@ -326,20 +362,13 @@ class ModelSelector:
                 print("\n\n  Cancelled. Using default.")
                 default_model = recommended[0] if recommended else all_models[0]
                 return default_model.name
-    
-    def get_model_info(self, model_name: str) -> ModelInfo:
-        """Get info for a specific model."""
-        for model in MODEL_CATALOG:
-            if model.name == model_name:
-                return model
-        
-        # Return default if not found
-        return MODEL_CATALOG[0]
 
 
 def select_model_interactive() -> str:
     """
     Main function for interactive model selection.
+    Only shows target models that are actually downloaded.
+    Judge models are automatically configured.
     
     Returns:
         Model name (HuggingFace identifier)

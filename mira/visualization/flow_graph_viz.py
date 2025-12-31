@@ -1582,14 +1582,28 @@ def get_flow_graph_html() -> str:
 
             switch (type) {
                 case 'attack_step':
-                    state.step = data.step;
-                    state.loss = data.loss;
-                    if (data.loss < state.bestLoss) {
-                        state.bestLoss = data.loss;
-                        document.getElementById('best-loss').textContent = state.bestLoss.toFixed(4);
+                    state.step = data.step || 0;
+                    
+                    // Handle loss value - 0.0 is a valid loss value, so we check for undefined/null
+                    if (data.loss !== undefined && data.loss !== null && !isNaN(data.loss) && isFinite(data.loss)) {
+                        state.loss = data.loss;
+                        
+                        // Update best loss (0.0 is valid, so we compare normally)
+                        if (state.bestLoss === Infinity || state.loss < state.bestLoss) {
+                            state.bestLoss = state.loss;
+                            document.getElementById('best-loss').textContent = state.bestLoss.toFixed(4);
+                        }
+                        
+                        // Always display current loss, even if it's 0.0
+                        document.getElementById('current-loss').textContent = state.loss.toFixed(4);
+                    } else {
+                        // If loss is truly not available, show '--' and don't update best
+                        state.loss = null;
+                        document.getElementById('current-loss').textContent = '--';
+                        // Only update best loss if we have a valid loss value
                     }
-                    document.getElementById('current-step').textContent = data.step;
-                    document.getElementById('current-loss').textContent = data.loss?.toFixed(4) || '--';
+                    
+                    document.getElementById('current-step').textContent = state.step;
                     document.getElementById('suffix-text').textContent = data.suffix || '--';
                     
                     // Update current prompt
@@ -1598,7 +1612,28 @@ def get_flow_graph_html() -> str:
                         state.currentPrompt = data.prompt;
                     }
                     
-                    addConsoleLine('ATTACK', `Step ${data.step}: loss=${data.loss?.toFixed(4)}, best=${state.bestLoss.toFixed(4)}`);
+                    // Update model response if available in attack_step event
+                    if (data.response && data.response !== '--' && data.response.trim() !== '') {
+                        const responseEl = document.getElementById('current-response');
+                        if (responseEl) {
+                            responseEl.textContent = data.response.length > 500 ? data.response.slice(0, 500) + '...' : data.response;
+                        }
+                        const statusEl = document.getElementById('response-status');
+                        if (statusEl) {
+                            const isSuccess = data.success || false;
+                            statusEl.textContent = isSuccess ? 'SUCCESS - Attack Bypassed Safety' : 'FAILED - Model Refused';
+                            statusEl.className = 'response-status ' + (isSuccess ? 'success' : 'failed');
+                        }
+                        addConsoleLine('RESPONSE', `Model response: ${data.response.slice(0, 100)}${data.response.length > 100 ? '...' : ''}`);
+                    }
+                    
+                    const lossStr = state.loss !== null && !isNaN(state.loss) && isFinite(state.loss) 
+                        ? state.loss.toFixed(4) 
+                        : 'N/A';
+                    const bestStr = state.bestLoss !== Infinity && !isNaN(state.bestLoss) && isFinite(state.bestLoss)
+                        ? state.bestLoss.toFixed(4)
+                        : 'N/A';
+                    addConsoleLine('ATTACK', `Step ${state.step}: loss=${lossStr}, best=${bestStr}`);
                     break;
 
                 case 'embeddings':
@@ -1752,18 +1787,47 @@ def get_flow_graph_html() -> str:
                 case 'phase':
                 case 'phase_update':
                     // Update phase progress display
-                    const phaseNum = data.current || data.phase;
+                    const phaseNum = data.current || data.phase || 0;
                     const totalPhases = data.total || 7;
-                    const phaseName = data.name || '';
+                    const phaseName = data.name || 'Unknown';
                     const phaseDetail = data.detail || '';
                     const phaseProgress = data.progress !== undefined ? data.progress : (phaseNum / totalPhases * 100);
                     
-                    document.getElementById('phase-number').textContent = `${phaseNum}/${totalPhases}`;
-                    document.getElementById('phase-name').textContent = phaseName;
-                    document.getElementById('phase-detail').textContent = phaseDetail;
-                    document.getElementById('progress-bar').style.width = `${phaseProgress}%`;
+                    // Update phase indicator in header or status area (if exists)
+                    const phaseIndicator = document.getElementById('phase-indicator');
+                    if (phaseIndicator) {
+                        phaseIndicator.textContent = `PHASE ${phaseNum}/${totalPhases}: ${phaseName}`;
+                    }
                     
-                    addConsoleLine('INFO', `PHASE ${phaseNum}/${totalPhases}: ${phaseName}`);
+                    // Update phase number, name, detail (if elements exist)
+                    const phaseNumberEl = document.getElementById('phase-number');
+                    if (phaseNumberEl) {
+                        phaseNumberEl.textContent = `${phaseNum}/${totalPhases}`;
+                    }
+                    
+                    const phaseNameEl = document.getElementById('phase-name');
+                    if (phaseNameEl) {
+                        phaseNameEl.textContent = phaseName;
+                    }
+                    
+                    const phaseDetailEl = document.getElementById('phase-detail');
+                    if (phaseDetailEl) {
+                        phaseDetailEl.textContent = phaseDetail;
+                    }
+                    
+                    // Update progress bar (if exists)
+                    const progressBar = document.getElementById('phase-progress');
+                    if (progressBar) {
+                        progressBar.style.width = `${phaseProgress}%`;
+                    }
+                    
+                    // Also try progress-bar (alternative ID)
+                    const progressBarAlt = document.getElementById('progress-bar');
+                    if (progressBarAlt) {
+                        progressBarAlt.style.width = `${phaseProgress}%`;
+                    }
+                    
+                    addConsoleLine('PHASE', `PHASE ${phaseNum}/${totalPhases}: ${phaseName}${phaseDetail ? ' - ' + phaseDetail : ''} (${phaseProgress.toFixed(0)}%)`);
                     break;
             }
         }
@@ -1771,33 +1835,79 @@ def get_flow_graph_html() -> str:
         // SSE Connection
         function connectSSE() {
             console.log('Connecting to SSE endpoint...');
+            addConsoleLine('INFO', 'Connecting to MIRA server...');
+            
+            // Close existing connection if any
+            if (window.currentEventSource) {
+                window.currentEventSource.close();
+            }
+            
             const eventSource = new EventSource('/api/events');
+            window.currentEventSource = eventSource; // Store for cleanup
 
             eventSource.onopen = () => {
                 console.log('SSE connection opened');
                 document.getElementById('connection-dot').classList.remove('disconnected');
                 document.getElementById('connection-status').textContent = 'Connected';
-                addConsoleLine('INFO', 'Connected to MIRA server');
+                addConsoleLine('INFO', '[OK] SSE connection established');
             };
 
             eventSource.onerror = (err) => {
                 console.error('SSE connection error:', err);
-                document.getElementById('connection-dot').classList.add('disconnected');
-                document.getElementById('connection-status').textContent = 'Disconnected';
-                addConsoleLine('ERROR', 'Connection lost, reconnecting...');
+                const statusEl = document.getElementById('connection-status');
+                const dotEl = document.getElementById('connection-dot');
+                
+                if (eventSource.readyState === EventSource.CONNECTING) {
+                    statusEl.textContent = 'Connecting...';
+                    dotEl.classList.add('disconnected');
+                    addConsoleLine('INFO', 'Reconnecting to server...');
+                } else if (eventSource.readyState === EventSource.CLOSED) {
+                    statusEl.textContent = 'Disconnected';
+                    dotEl.classList.add('disconnected');
+                    addConsoleLine('ERROR', 'Connection closed. Refresh page to reconnect.');
+                } else {
+                    statusEl.textContent = 'Error';
+                    dotEl.classList.add('disconnected');
+                    addConsoleLine('ERROR', 'Connection error occurred');
+                }
             };
 
             eventSource.onmessage = (e) => {
                 try {
-                    const event = JSON.parse(e.data);
+                    // SSE format: data: {json}
+                    let dataStr = e.data;
+                    if (dataStr && dataStr.startsWith('data: ')) {
+                        dataStr = dataStr.substring(6);
+                    }
+                    
+                    const event = JSON.parse(dataStr);
                     console.log('SSE event received:', event.event_type, event.data ? Object.keys(event.data) : 'no data');
                     
-                    // Handle connected/ping events
+                    // Handle connected/ping/status events
                     if (event.event_type === 'connected') {
                         console.log('Received connected event');
                         document.getElementById('connection-dot').classList.remove('disconnected');
                         document.getElementById('connection-status').textContent = 'Connected';
-                        addConsoleLine('INFO', '✓ Connected to MIRA server');
+                        addConsoleLine('INFO', '[OK] Connected to MIRA server');
+                        if (event.data && event.data.message) {
+                            addConsoleLine('INFO', event.data.message);
+                        }
+                        // Update phase display to show we're connected
+                        const phaseNameEl = document.getElementById('phase-name');
+                        const phaseDetailEl = document.getElementById('phase-detail');
+                        if (phaseNameEl) {
+                            phaseNameEl.textContent = 'Connected - Waiting for analysis...';
+                        }
+                        if (phaseDetailEl) {
+                            phaseDetailEl.textContent = 'Ready to receive data';
+                        }
+                        return;
+                    }
+                    if (event.event_type === 'status') {
+                        // Server status update
+                        if (event.data && event.data.message) {
+                            addConsoleLine('INFO', event.data.message);
+                        }
                         return;
                     }
                     if (event.event_type === 'ping') {
@@ -1806,13 +1916,22 @@ def get_flow_graph_html() -> str:
                         document.getElementById('connection-status').textContent = 'Connected';
                         return;
                     }
+                    if (event.event_type === 'phase' || event.event_type === 'phase_update') {
+                        // Phase events should be handled by handleEvent, but also process here for onmessage
+                        handleEvent(event);
+                        return;
+                    }
                     handleEvent(event);
                 } catch (err) {
-                    console.error('Failed to parse event:', err, e.data);
+                    console.error('Failed to parse event:', err, 'Raw data:', e.data);
+                    // Try to show connection is working even if event parsing fails
+                    document.getElementById('connection-dot').classList.remove('disconnected');
+                    document.getElementById('connection-status').textContent = 'Connected (parsing error)';
                 }
             };
 
             // Listen for specific event types (matching server-side event types)
+            // Note: SSE events with 'event:' prefix will trigger these listeners
             ['attack_step', 'embeddings', 'flow_graph', 'attention', 'attention_matrix', 
              'layer', 'layer_update', 'output_probs', 'output_probabilities', 
              'qkv', 'mlp', 'response', 'console', 'pattern_detected',
@@ -1820,13 +1939,41 @@ def get_flow_graph_html() -> str:
              'phase', 'phase_update'].forEach(eventType => {
                 eventSource.addEventListener(eventType, (e) => {
                     try {
-                        const data = JSON.parse(e.data);
-                        handleEvent({ event_type: eventType, data });
+                        // e.data should be the JSON string from the event
+                        let eventData;
+                        if (typeof e.data === 'string') {
+                            eventData = JSON.parse(e.data);
+                        } else {
+                            eventData = e.data;
+                        }
+                        // If eventData is the full event object, extract data field
+                        if (eventData && eventData.data) {
+                            handleEvent({ event_type: eventType, data: eventData.data });
+                        } else {
+                            handleEvent({ event_type: eventType, data: eventData });
+                        }
                     } catch (err) {
-                        console.error(`Failed to parse ${eventType} event:`, err);
+                        console.error(`Failed to parse ${eventType} event:`, err, 'Raw data:', e.data);
                     }
                 });
             });
+        }
+
+        // Test server connection
+        async function testServerConnection() {
+            try {
+                const response = await fetch('/api/test');
+                const data = await response.json();
+                console.log('Server test response:', data);
+                addConsoleLine('INFO', 'Server is running: ' + data.message);
+                return true;
+            } catch (err) {
+                console.error('Server test failed:', err);
+                addConsoleLine('ERROR', 'Cannot reach server. Is MIRA running?');
+                document.getElementById('connection-status').textContent = 'Server Not Found';
+                document.getElementById('connection-dot').classList.add('disconnected');
+                return false;
+            }
         }
 
         // Initialize
@@ -1839,7 +1986,15 @@ def get_flow_graph_html() -> str:
             updateAttentionHeatmap(null, null);
             updateLayerPredictions();
             updateSSRBuffer();
-            connectSSE();
+            
+            // Test server first, then connect SSE
+            testServerConnection().then(connected => {
+                if (connected) {
+                    connectSSE();
+                } else {
+                    addConsoleLine('ERROR', 'Please start MIRA with: python main.py');
+                }
+            });
 
             // Update initial flow graph
             updateFlowGraph(generateLayerFlowGraph(0, null));

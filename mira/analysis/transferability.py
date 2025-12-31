@@ -166,7 +166,7 @@ class TransferabilityAnalyzer:
         
         # If no random baseline provided, use theoretical baseline
         if random_baseline is None or not random_baseline:
-            # Assume random prompts have ~20-30% ASR based on literature
+            # Estimate random baseline ASR (typically 20-30% for random prompt attempts)
             random_mean = 0.25
             random_std = 0.15
             p_value = None
