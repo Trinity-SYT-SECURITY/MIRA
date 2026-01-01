@@ -109,12 +109,11 @@ class ModelWrapper:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
             # Load model with proper dtype
-            # Use "auto" to let HuggingFace auto-detect optimal precision from model config
-            # This is the recommended approach per HuggingFace documentation
+            # Note: 'dtype' is the new parameter name (torch_dtype is deprecated)
             self.model = AutoModelForCausalLM.from_pretrained(
                 load_path,
                 cache_dir=cache_dir,
-                torch_dtype="auto",  # Auto-detect optimal dtype from model config
+                device_map=None,  # Manual device placement with .to()
                 trust_remote_code=True,
                 attn_implementation="eager",  # Enable output_attentions
                 low_cpu_mem_usage=True,  # Reduce memory usage during loading
