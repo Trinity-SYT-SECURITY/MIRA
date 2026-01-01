@@ -296,15 +296,21 @@ class ModelSelector:
         
         return recommended, advanced
     
-    def print_model_list(self, models: List[ModelInfo], title: str):
-        """Print formatted model list."""
+    def print_model_list(self, models: List[ModelInfo], title: str, start_index: int = 1):
+        """Print formatted model list.
+        
+        Args:
+            models: List of ModelInfo objects
+            title: Section title
+            start_index: Starting index for numbering (default 1)
+        """
         if not models:
             return
         
         print(f"\n{title}")
         print("-" * 60)
         
-        for i, model in enumerate(models, 1):
+        for i, model in enumerate(models, start_index):
             # Color coding
             if model.speed == "fast":
                 speed_icon = "🟢"
@@ -366,9 +372,10 @@ class ModelSelector:
         if recommended:
             self.print_model_list(recommended, "🎯 RECOMMENDED MODELS (Downloaded)")
         
-        # Print advanced models
+        # Print advanced models (continue numbering from recommended)
         if advanced:
-            self.print_model_list(advanced, "🚀 ADVANCED MODELS (Downloaded)")
+            start_idx = len(recommended) + 1
+            self.print_model_list(advanced, "🚀 ADVANCED MODELS (Downloaded)", start_index=start_idx)
         
         # Get user choice
         all_models = recommended + advanced
