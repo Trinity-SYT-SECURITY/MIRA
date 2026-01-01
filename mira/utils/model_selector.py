@@ -252,14 +252,26 @@ class ModelSelector:
         return compatible
     
     def get_recommended_models(self, available_models: List[ModelInfo]) -> Tuple[List[ModelInfo], List[ModelInfo]]:
-        """Get recommended and advanced models from available models."""
+        """Get recommended and advanced models from available models.
+        
+        GPU-aware: prioritizes larger models when GPU is detected.
+        """
         compatible = self.get_compatible_models(available_models)
         
-        # Recommended: easy/medium difficulty, smaller models
-        recommended = [m for m in compatible if m.difficulty in ["easy", "medium"] and m.category in ["tiny", "small"]]
-        
-        # Advanced: larger models or hard difficulty
-        advanced = [m for m in compatible if m.difficulty == "hard" or m.category in ["medium", "large"]]
+        # GPU mode: prioritize larger models for research
+        if self.has_gpu and self.vram_gb >= 16:
+            # Recommended: medium to large models (good for research)
+            recommended = [m for m in compatible if m.category in ["medium", "large"]]
+            # Advanced: very large models
+            advanced = [m for m in compatible if m.category == "xlarge"]
+            
+            # If no medium/large models, fall back to small
+            if not recommended:
+                recommended = [m for m in compatible if m.category == "small"]
+        else:
+            # CPU mode: prioritize smaller models
+            recommended = [m for m in compatible if m.difficulty in ["easy", "medium"] and m.category in ["tiny", "small"]]
+            advanced = [m for m in compatible if m.difficulty == "hard" or m.category in ["medium", "large"]]
         
         return recommended, advanced
     
