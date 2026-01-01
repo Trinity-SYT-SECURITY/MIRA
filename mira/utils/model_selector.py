@@ -26,6 +26,7 @@ class ModelInfo:
     description: str
     category: str  # "tiny", "small", "medium", "large", "chat"
     local_name: Optional[str] = None  # Local directory name
+    is_gpu_model: bool = False  # True if requires GPU (from GPU_MODEL_REGISTRY)
 
 
 def get_available_target_models() -> List[ModelInfo]:
@@ -80,6 +81,7 @@ def get_available_target_models() -> List[ModelInfo]:
                 break
         
         # If not found, check GPU_MODEL_REGISTRY
+        is_from_gpu_registry = False
         if not info:
             try:
                 from mira.utils.gpu_models import GPU_MODEL_REGISTRY
@@ -93,6 +95,7 @@ def get_available_target_models() -> List[ModelInfo]:
                     if local_name == model_dir or local_name == model_dir_dash:
                         info = reg_info
                         hf_name_used = hf_name
+                        is_from_gpu_registry = True  # Mark as GPU model
                         break
             except ImportError as e:
                 pass  # GPU models not available
@@ -209,6 +212,7 @@ def get_available_target_models() -> List[ModelInfo]:
                     description=info.get("description", ""),
                     category=category,
                     local_name=model_dir,
+                    is_gpu_model=is_from_gpu_registry,  # Track GPU vs CPU model
                 )
                 target_models.append(model_info)
     
@@ -339,7 +343,10 @@ class ModelSelector:
                 print(f"      📝 {model.description}")
     
     def select_model(self, default_model: str = None) -> str:
-        """Interactive model selection - only shows downloaded target models.
+        """Interactive model selection - shows downloaded target models.
+        
+        GPU mode: Shows GPU models first, then CPU models
+        CPU mode: Only shows CPU-compatible models (hides GPU-only models)
         
         Args:
             default_model: Optional default model name from .env
@@ -355,30 +362,63 @@ class ModelSelector:
             print("   Recommended: smollm2-135m, tinyllama-1.1b, gpt2-medium")
             return "EleutherAI/pythia-70m"  # Fallback
         
-        recommended, advanced = self.get_recommended_models(available_models)
+        # Separate GPU and CPU models
+        gpu_models = [m for m in available_models if m.is_gpu_model]
+        cpu_models = [m for m in available_models if not m.is_gpu_model]
         
-        # If no recommended, use all compatible
-        if not recommended and not advanced:
-            compatible = self.get_compatible_models(available_models)
-            if compatible:
-                recommended = compatible[:3]
-                advanced = compatible[3:]
-            else:
-                print("❌ No compatible models found for your system!")
-                print("   Minimum requirement: 2GB RAM")
-                return available_models[0].name  # Fallback to first available
+        # Filter based on system capabilities
+        if self.has_gpu:
+            # GPU mode: Show all models, GPU first
+            print("\n" + "="*60)
+            print("  🎮 GPU MODE - All models accessible")
+            print("="*60)
+            
+            all_display_models = []
+            
+            # Show GPU models first (filtered by VRAM compatibility)
+            compatible_gpu = [m for m in gpu_models if m.min_vram_gb <= self.vram_gb]
+            if compatible_gpu:
+                # Sort by VRAM requirement
+                compatible_gpu.sort(key=lambda m: m.min_vram_gb)
+                self.print_model_list(compatible_gpu, "🎮 GPU MODELS (Recommended for GPU systems)")
+                all_display_models.extend(compatible_gpu)
+            
+            # Then show CPU models
+            if cpu_models:
+                # Filter by RAM
+                compatible_cpu = [m for m in cpu_models if m.min_ram_gb <= self.ram_gb]
+                if compatible_cpu:
+                    compatible_cpu.sort(key=lambda m: m.min_ram_gb)
+                    start_idx = len(all_display_models) + 1
+                    self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Also available)", start_index=start_idx)
+                    all_display_models.extend(compatible_cpu)
+        else:
+            # CPU mode: Only show CPU models (hide GPU-only models)
+            print("\n" + "="*60)
+            print("  🖥️ CPU MODE - Showing CPU-compatible models only")
+            print("  ⚠️ GPU models are hidden (require GPU)")
+            print("="*60)
+            
+            all_display_models = []
+            
+            # Show only CPU models
+            if cpu_models:
+                compatible_cpu = [m for m in cpu_models if m.min_ram_gb <= self.ram_gb]
+                if compatible_cpu:
+                    compatible_cpu.sort(key=lambda m: m.min_ram_gb)
+                    self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Downloaded)")
+                    all_display_models.extend(compatible_cpu)
+            
+            if not all_display_models:
+                print("\n⚠️ No CPU-compatible models found!")
+                print("   GPU models available but require a GPU:")
+                for m in gpu_models[:3]:
+                    print(f"   - {m.name} (VRAM: {m.min_vram_gb}GB)")
+                return gpu_models[0].name if gpu_models else "EleutherAI/pythia-70m"
         
-        # Print recommended models
-        if recommended:
-            self.print_model_list(recommended, "🎯 RECOMMENDED MODELS (Downloaded)")
-        
-        # Print advanced models (continue numbering from recommended)
-        if advanced:
-            start_idx = len(recommended) + 1
-            self.print_model_list(advanced, "🚀 ADVANCED MODELS (Downloaded)", start_index=start_idx)
-        
-        # Get user choice
-        all_models = recommended + advanced
+        if not all_display_models:
+            print("❌ No compatible models found for your system!")
+            return available_models[0].name
         
         # Show default model info if set
         default_display = ""
@@ -386,7 +426,7 @@ class ModelSelector:
             default_display = f" [default: {default_model}]"
         
         print("\n" + "="*60)
-        print(f"  Enter number (1-{len(all_models)}) or press Enter for default{default_display}")
+        print(f"  Enter number (1-{len(all_display_models)}) or press Enter for default{default_display}")
         print("="*60)
         print("\n  💡 Judge models are automatically configured")
         print("     (distilbert, toxic-bert, sentence-transformers)")
@@ -396,10 +436,10 @@ class ModelSelector:
                 choice = input("\n  Your choice: ").strip()
                 
                 if not choice:
-                    # Use .env default if set and valid, otherwise first recommended
+                    # Use .env default if set and valid, otherwise first model in list
                     if default_model:
                         # Check if default_model is in available models
-                        for m in all_models:
+                        for m in all_display_models:
                             if m.name == default_model:
                                 print(f"\n  ✓ Using .env default: {m.display_name} ({m.name})")
                                 return m.name
@@ -407,14 +447,18 @@ class ModelSelector:
                         print(f"\n  ✓ Using .env default: {default_model}")
                         return default_model
                     else:
-                        default_model_obj = recommended[0] if recommended else all_models[0]
+                        default_model_obj = all_display_models[0]
                         print(f"\n  ✓ Using default: {default_model_obj.display_name} ({default_model_obj.name})")
                         return default_model_obj.name
                 
                 idx = int(choice) - 1
-                if 0 <= idx < len(all_models):
-                    selected = all_models[idx]
+                if 0 <= idx < len(all_display_models):
+                    selected = all_display_models[idx]
                     print(f"\n  ✓ Selected: {selected.display_name} ({selected.name})")
+                    
+                    # Warn if GPU model selected
+                    if selected.is_gpu_model:
+                        print(f"  🎮 GPU model - will use CUDA for inference")
                     
                     # Warn if challenging
                     if selected.difficulty == "hard":
@@ -422,14 +466,14 @@ class ModelSelector:
                     
                     return selected.name
                 else:
-                    print(f"  ❌ Invalid choice. Enter 1-{len(all_models)}")
+                    print(f"  ❌ Invalid choice. Enter 1-{len(all_display_models)}")
             
             except ValueError:
-                print(f"  ❌ Invalid input. Enter a number 1-{len(all_models)}")
+                print(f"  ❌ Invalid input. Enter a number 1-{len(all_display_models)}")
             except KeyboardInterrupt:
                 print("\n\n  Cancelled. Using default.")
-                default_model = recommended[0] if recommended else all_models[0]
-                return default_model.name
+                default_model_obj = all_display_models[0]
+                return default_model_obj.name
 
 
 def select_model_interactive(default_model: str = None) -> str:
