@@ -424,18 +424,27 @@ class ModelSelector:
                 self._selected_device = "cuda"
             else:
                 print("\n  ✓ Using CPU mode (GPU disabled)")
-                # User chose CPU: Only show CPU models
+                # User chose CPU: Show ALL models but note GPU models will be slower
                 print("\n" + "="*60)
-                print("  🖥️ CPU MODE - Showing CPU-compatible models only")
+                print("  🖥️ CPU MODE - All models accessible (GPU models will run slower)")
                 print("="*60)
                 
                 all_display_models = []
                 
+                # Show GPU models first with slower warning
+                if gpu_models:
+                    print("\n⚠️ GPU models will run on CPU (slower but stable)")
+                    gpu_models.sort(key=lambda m: m.min_vram_gb)
+                    self.print_model_list(gpu_models, "🎮 GPU MODELS (Will run on CPU - slower)")
+                    all_display_models.extend(gpu_models)
+                
+                # Then show CPU models
                 if cpu_models:
                     compatible_cpu = [m for m in cpu_models if m.min_ram_gb <= self.ram_gb]
                     if compatible_cpu:
                         compatible_cpu.sort(key=lambda m: m.min_ram_gb)
-                        self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Downloaded)")
+                        start_idx = len(all_display_models) + 1
+                        self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Optimized for CPU)", start_index=start_idx)
                         all_display_models.extend(compatible_cpu)
                 
                 # Store device selection
