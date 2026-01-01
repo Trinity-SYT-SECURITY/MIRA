@@ -1553,7 +1553,7 @@ def get_flow_graph_html() -> str:
             });
 
             if (probs.length === 0) {
-                html = '<div class="loading-hint"><div class="spinner"></div><span class="hint-text">🔮 Predictions will appear during attack</span></div>';
+                html = '<div class="loading-hint"><div class="spinner"></div><span class="hint-text">⚙️ Computing predictions...</span></div>';
             }
 
             container.innerHTML = html;
