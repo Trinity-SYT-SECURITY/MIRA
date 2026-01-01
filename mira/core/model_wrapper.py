@@ -73,7 +73,14 @@ class ModelWrapper:
             cache_dir: Directory for caching model files
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.dtype = dtype or torch.float32
+        
+        # Auto-select dtype: use float16 for GPU to save memory, float32 for CPU
+        if dtype is not None:
+            self.dtype = dtype
+        elif self.device == "cuda":
+            self.dtype = torch.float16  # Default to half-precision for GPU
+        else:
+            self.dtype = torch.float32  # Full precision for CPU
         
         # Check if we received a pre-loaded model or a model name string
         if isinstance(model_name_or_model, str):
@@ -101,13 +108,14 @@ class ModelWrapper:
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
-            # Load model
+            # Load model with proper dtype
             self.model = AutoModelForCausalLM.from_pretrained(
                 load_path,
                 cache_dir=cache_dir,
-                dtype=self.dtype,  # Changed from torch_dtype to dtype (deprecated warning fix)
+                torch_dtype=self.dtype,  # Use torch_dtype for model precision
                 trust_remote_code=True,
                 attn_implementation="eager",  # Enable output_attentions
+                low_cpu_mem_usage=True,  # Reduce memory usage during loading
             ).to(self.device)
             self.model.eval()
         else:
