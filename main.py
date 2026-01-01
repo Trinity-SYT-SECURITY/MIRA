@@ -46,13 +46,16 @@ from mira.visualization.interactive_html import InteractiveViz
 
 # Import new mechanistic analysis tools
 try:
-    from mira.analysis.logit_lens import LogitProjector, run_logit_lens_analysis
-    from mira.analysis.uncertainty import UncertaintyAnalyzer, analyze_generation_uncertainty
+    from mira.analysis.logit_lens import LogitLens, run_logit_lens_analysis
+    from mira.analysis.attention_visualizer import AttentionVisualizer, run_attention_analysis
+    from mira.analysis.multi_run_analyzer import MultiRunAnalyzer, analyze_runs
     ADVANCED_ANALYSIS_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"Note: Advanced analysis not available: {e}")
     ADVANCED_ANALYSIS_AVAILABLE = False
-    LogitProjector = None
-    UncertaintyAnalyzer = None
+    LogitLens = None
+    AttentionVisualizer = None
+    MultiRunAnalyzer = None
 
 # Import new judge system and research report
 try:
@@ -3984,6 +3987,101 @@ def main():
     })
     phase_manager.set_phase_summary(6, f"Probe ASR: {probe_asr:.1%}, Total: {probe_total}, Successful: {probe_successful}")
     phase_manager.end_phase()
+    
+    # ================================================================
+    # MECHANISTIC INTERPRETABILITY ANALYSIS
+    # ================================================================
+    if ADVANCED_ANALYSIS_AVAILABLE and len(safe_prompts) > 0 and len(attack_prompts) > 0:
+        print("\n" + "="*70)
+        print("  MECHANISTIC INTERPRETABILITY ANALYSIS")
+        print("="*70)
+        
+        analysis_dir = output_dir / "mira" / "analysis"
+        analysis_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Select sample prompts for analysis
+        sample_clean = safe_prompts[0]
+        sample_attack = attack_prompts[0]
+        
+        # 1. Logit Lens Analysis
+        print("\n  📊 Running Logit Lens Analysis...")
+        try:
+            logit_lens = LogitLens(model)
+            clean_result, attack_result, logit_comparison = logit_lens.compare(
+                sample_clean, 
+                sample_attack,
+                target_tokens=["Sure", "Sorry", "cannot", "I", "Here"]  # Common target tokens
+            )
+            
+            # Generate plots
+            logit_lens.plot_layer_evolution(clean_result, save_path=str(analysis_dir / "logit_lens_clean.png"))
+            logit_lens.plot_layer_evolution(attack_result, save_path=str(analysis_dir / "logit_lens_attack.png"))
+            logit_lens.plot_comparison_heatmap(clean_result, attack_result, save_path=str(analysis_dir / "logit_lens_comparison.png"))
+            logit_lens.plot_kl_divergence(logit_comparison, save_path=str(analysis_dir / "logit_lens_kl.png"))
+            
+            # Find layer with max divergence
+            max_kl_layer = max(logit_comparison['kl_divergence'].items(), key=lambda x: x[1])
+            print(f"    ✓ Logit Lens analysis complete")
+            print(f"    📈 Max KL divergence at layer {max_kl_layer[0]}: {max_kl_layer[1]:.4f}")
+            
+        except Exception as e:
+            print(f"    ⚠ Logit Lens analysis failed: {e}")
+            logit_comparison = None
+        
+        # 2. Attention Pattern Analysis
+        print("\n  🔍 Running Attention Pattern Analysis...")
+        try:
+            attention_viz = AttentionVisualizer(model)
+            clean_attn, attack_attn, attn_comparison = attention_viz.compare(
+                sample_clean,
+                sample_attack
+            )
+            
+            # Generate plots
+            attention_viz.plot_layer_divergence(attn_comparison, save_path=str(analysis_dir / "attention_divergence.png"))
+            attention_viz.plot_head_attribution(attn_comparison, save_path=str(analysis_dir / "attention_heads.png"))
+            
+            # Plot top 3 most affected layers
+            top_layers = sorted(attn_comparison['kl_divergence'].items(), key=lambda x: x[1], reverse=True)[:3]
+            for layer_idx, kl_val in top_layers:
+                attention_viz.plot_comparison(
+                    clean_attn, attack_attn, layer_idx,
+                    save_path=str(analysis_dir / f"attention_layer_{layer_idx}.png")
+                )
+            
+            # Report most affected heads
+            print(f"    ✓ Attention analysis complete")
+            if attn_comparison['most_affected_heads']:
+                top_head = attn_comparison['most_affected_heads'][0]
+                print(f"    🎯 Most affected head: Layer {top_head[0]}, Head {top_head[1]} (KL={top_head[2]:.4f})")
+            
+        except Exception as e:
+            print(f"    ⚠ Attention analysis failed: {e}")
+            attn_comparison = None
+        
+        # Save analysis summary
+        analysis_summary = {
+            "logit_lens_available": logit_comparison is not None,
+            "attention_available": attn_comparison is not None,
+        }
+        if logit_comparison:
+            analysis_summary["logit_max_kl_layer"] = max_kl_layer[0]
+            analysis_summary["logit_max_kl_value"] = max_kl_layer[1]
+        if attn_comparison and attn_comparison['most_affected_heads']:
+            analysis_summary["top_affected_head"] = {
+                "layer": attn_comparison['most_affected_heads'][0][0],
+                "head": attn_comparison['most_affected_heads'][0][1],
+                "kl_value": attn_comparison['most_affected_heads'][0][2],
+            }
+        
+        import json
+        with open(analysis_dir / "analysis_summary.json", 'w') as f:
+            json.dump(analysis_summary, f, indent=2)
+        
+        print(f"\n  ✅ Mechanistic analysis saved to: {analysis_dir}")
+    else:
+        if not ADVANCED_ANALYSIS_AVAILABLE:
+            print("  ⚠ Mechanistic analysis skipped (modules not available)")
     
     # ================================================================
     # PHASE 7: GENERATE OUTPUTS
