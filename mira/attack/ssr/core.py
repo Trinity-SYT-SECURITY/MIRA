@@ -358,12 +358,15 @@ class SSRAttack(ABC):
         Returns:
             [mask_len, vocab_size] gradients
         """
-        # Create one-hot encoding for gradient computation
-        one_hot = F.one_hot(current_ids, num_classes=self.model.vocab_size).float()
+        # Get embeddings matrix first to determine correct dtype
+        embed_matrix = self.model.get_embedding_matrix()
+        
+        # Create one-hot encoding with same dtype as embed_matrix
+        one_hot = F.one_hot(current_ids, num_classes=self.model.vocab_size)
+        one_hot = one_hot.to(dtype=embed_matrix.dtype)  # Match embed_matrix dtype (float16 or float32)
         one_hot.requires_grad = True
         
         # Get embeddings from one-hot
-        embed_matrix = self.model.get_embedding_matrix()
         adv_embeds = torch.matmul(one_hot, embed_matrix)  # [mask_len, d_model]
         
         # Create full embedding sequence
