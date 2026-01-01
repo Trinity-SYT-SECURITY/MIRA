@@ -49,6 +49,7 @@ try:
     from mira.analysis.logit_lens import LogitLens, run_logit_lens_analysis
     from mira.analysis.attention_visualizer import AttentionVisualizer, run_attention_analysis
     from mira.analysis.multi_run_analyzer import MultiRunAnalyzer, analyze_runs
+    from mira.analysis.probe_visualizer import plot_probe_accuracy_vs_layer, run_probe_layer_analysis
     ADVANCED_ANALYSIS_AVAILABLE = True
 except ImportError as e:
     print(f"Note: Advanced analysis not available: {e}")
@@ -56,6 +57,8 @@ except ImportError as e:
     LogitLens = None
     AttentionVisualizer = None
     MultiRunAnalyzer = None
+    plot_probe_accuracy_vs_layer = None
+    run_probe_layer_analysis = None
 
 # Import new judge system and research report
 try:
@@ -4073,6 +4076,28 @@ def main():
                 "head": attn_comparison['most_affected_heads'][0][1],
                 "kl_value": attn_comparison['most_affected_heads'][0][2],
             }
+        
+        # 3. Probe Accuracy vs Layer Curve
+        print("\n  📈 Running Probe vs Layer Analysis...")
+        try:
+            if run_probe_layer_analysis:
+                probe_layer_result = run_probe_layer_analysis(
+                    model,
+                    safe_prompts[:5],  # Use subset for speed
+                    harmful_prompts[:5],
+                    output_dir=str(analysis_dir),
+                    n_layers_to_sample=min(8, model.n_layers)
+                )
+                if probe_layer_result:
+                    analysis_summary["probe_vs_layer"] = {
+                        "best_layer": probe_layer_result.get("best_layer", -1),
+                        "best_accuracy": probe_layer_result.get("best_accuracy", 0.0),
+                        "accuracies": {str(k): v for k, v in probe_layer_result.get("accuracies", {}).items()}
+                    }
+                    print(f"    ✓ Best discriminating layer: {probe_layer_result.get('best_layer', 'N/A')}")
+                    print(f"    ✓ Best accuracy: {probe_layer_result.get('best_accuracy', 0):.1%}")
+        except Exception as e:
+            print(f"    ⚠ Probe vs Layer analysis failed: {e}")
         
         # json is already imported at top of file
         with open(analysis_dir / "analysis_summary.json", 'w') as f:
