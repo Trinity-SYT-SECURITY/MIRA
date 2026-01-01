@@ -108,11 +108,13 @@ class ModelWrapper:
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
-            # Load model with proper dtype
-            # Note: 'dtype' is the new parameter name (torch_dtype is deprecated)
+            # Load model with proper dtype for GPU memory efficiency
+            # Note: For GPU models, this uses float16 (set in self.dtype)
+            # The torch_dtype parameter controls the precision during loading
             self.model = AutoModelForCausalLM.from_pretrained(
                 load_path,
                 cache_dir=cache_dir,
+                torch_dtype=self.dtype,  # float16 for GPU, float32 for CPU
                 device_map=None,  # Manual device placement with .to()
                 trust_remote_code=True,
                 attn_implementation="eager",  # Enable output_attentions

@@ -376,6 +376,11 @@ class SSRAttack(ABC):
         
         # Forward pass with gradient
         loss = self.compute_loss(full_embeds)
+        
+        # NaN early abort - prevents CUDA device-side assert
+        if torch.isnan(loss) or torch.isinf(loss):
+            raise RuntimeError(f"NaN/Inf detected in SSR loss - aborting to prevent CUDA crash. Loss: {loss.item()}")
+        
         loss.backward()
         
         # Get gradients

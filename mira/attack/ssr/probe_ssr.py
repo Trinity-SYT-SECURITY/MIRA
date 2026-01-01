@@ -277,6 +277,12 @@ class ProbeSSR(SSRAttack):
                     logits = probe(batch_X)
                     # BCEWithLogitsLoss handles sigmoid internally - no clamp needed
                     loss = loss_fn(logits, batch_y)
+                    
+                    # NaN early detection - skip batch to prevent CUDA crash
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        print(f"    ⚠ NaN/Inf detected in probe training, skipping batch")
+                        continue
+                    
                     loss.backward()
                     optimizer.step()
                     
