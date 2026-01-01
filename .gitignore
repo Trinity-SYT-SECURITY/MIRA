@@ -65,7 +65,7 @@ models/
 # HuggingFace cache
 .cache/
 ~/.cache/huggingface/
-
+.mira_config.json
 # Virtual Environment
 mira-venv/
 # ===================

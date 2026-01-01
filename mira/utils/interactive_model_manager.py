@@ -463,8 +463,14 @@ class ModelManager:
         
         available_names = set()
         for m in project_models:
-            available_names.add(m["name"])
-            available_names.add(m["name"].replace("/", "--"))
+            dir_name = m["name"]  # Directory name like "HuggingFaceTB--SmolLM2-1.7B-Instruct"
+            # Add directory name as-is
+            available_names.add(dir_name)
+            # Convert directory name to model name format (-- to /)
+            model_name_from_dir = dir_name.replace("--", "/")
+            available_names.add(model_name_from_dir)
+            # Also add reverse conversion (in case it's already in model format)
+            available_names.add(dir_name.replace("/", "--"))
         
         for m in hf_models:
             available_names.add(m["name"])
@@ -758,6 +764,26 @@ class ModelManager:
         
         # Scan models in the selected directory
         project_models = self.scan_project_models()
+        
+        # If no models found in selected directory, check project root's models folder
+        if not project_models:
+            mira_root = Path(__file__).parent.parent.parent
+            root_models_dir = mira_root / "models"
+            if root_models_dir.exists() and root_models_dir != self.project_models_dir:
+                # Temporarily scan root models directory
+                original_dir = self.project_models_dir
+                self.project_models_dir = root_models_dir
+                root_models = self.scan_project_models()
+                self.project_models_dir = original_dir
+                
+                if root_models:
+                    print(f"\n💡 Found {len(root_models)} models in: {root_models_dir}")
+                    print(f"   But you selected: {self.project_models_dir}")
+                    use_root = input(f"   Use models from {root_models_dir} instead? (y/n, default: y): ").strip().lower()
+                    if not use_root or use_root == 'y':
+                        self.project_models_dir = root_models_dir
+                        self._save_models_directory_to_config(root_models_dir)
+                        project_models = root_models
         
         print(f"\n📁 Models directory: {self.project_models_dir}")
         print(f"   Models found: {len(project_models)}")
