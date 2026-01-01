@@ -379,6 +379,59 @@ class GCGAttack(BaseAttack):
         # Check success
         success = target.lower() in response.lower() if response else False
         
+        # Collect internal state data for research analysis
+        layer_data = None
+        attention_data = None
+        subspace_metrics = None
+        
+        try:
+            # Tokenize final prompt
+            final_input_ids = self.model.tokenizer.encode(full_prompt, return_tensors="pt").to(self.device)
+            
+            # Run with cache to collect internal states
+            with torch.no_grad():
+                outputs = self.model.model(
+                    final_input_ids,
+                    output_hidden_states=True,
+                    output_attentions=True,
+                )
+                
+                # Collect layer-wise activation norms
+                if hasattr(outputs, 'hidden_states') and outputs.hidden_states:
+                    layer_norms = {}
+                    for i, hidden in enumerate(outputs.hidden_states):
+                        if hidden is not None:
+                            layer_norms[i] = float(hidden.norm().item())
+                    layer_data = {"activation_norms": layer_norms}
+                
+                # Collect attention statistics
+                if hasattr(outputs, 'attentions') and outputs.attentions:
+                    num_heads = outputs.attentions[0].shape[1] if len(outputs.attentions) > 0 else 0
+                    # Compute mean attention entropy across layers
+                    attention_entropies = []
+                    for attn in outputs.attentions:
+                        if attn is not None:
+                            # Compute entropy: -sum(p * log(p))
+                            attn_probs = attn.mean(dim=1)  # Average over heads
+                            entropy = -(attn_probs * torch.log(attn_probs + 1e-10)).sum(dim=-1).mean()
+                            attention_entropies.append(float(entropy.item()))
+                    
+                    attention_data = {
+                        "num_heads": num_heads,
+                        "mean_entropy": float(np.mean(attention_entropies)) if attention_entropies else 0.0,
+                        "entropy_by_layer": attention_entropies,
+                    }
+                
+                # Collect subspace metrics if available
+                subspace_metrics = {
+                    "final_loss": best_loss,
+                    "loss_reduction": loss_history[0] - best_loss if loss_history else 0.0,
+                }
+        except Exception as e:
+            # If data collection fails, continue without it
+            if verbose:
+                print(f"Warning: Could not collect internal state data: {e}")
+        
         return AttackResult(
             success=success,
             adversarial_suffix=best_suffix,
@@ -386,6 +439,9 @@ class GCGAttack(BaseAttack):
             generated_response=response,
             num_steps=num_steps,
             loss_history=loss_history,
+            layer_activations=layer_data,
+            attention_patterns=attention_data,
+            subspace_metrics=subspace_metrics,
         )
     
     def optimize_step(

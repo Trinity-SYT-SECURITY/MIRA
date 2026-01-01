@@ -3772,6 +3772,8 @@ def main():
             response=result.generated_response or "",
             success=result.success,
             metrics={"loss": result.final_loss},
+            layer_data=result.layer_activations,
+            attention_data=result.attention_patterns,
         )
         
         # Save conversation to log file
@@ -3965,6 +3967,8 @@ def main():
             response=result["response"],
             success=result["success"],
             metrics={"risk_level": result["risk_level"]},
+            layer_data=None,  # Probes don't collect layer data
+            attention_data=None,  # Probes don't collect attention data
         )
     
     # Save Phase 6 data

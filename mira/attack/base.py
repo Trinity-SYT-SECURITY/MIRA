@@ -51,6 +51,12 @@ class AttackResult:
     # Generated response
     generated_response: Optional[str] = None
     
+    # Internal state data for research analysis
+    layer_activations: Optional[Dict[int, Any]] = None  # Layer-wise activations
+    attention_patterns: Optional[Dict[str, Any]] = None  # Attention weights and patterns
+    subspace_metrics: Optional[Dict[str, float]] = None  # Subspace distance metrics
+    logit_evolution: Optional[List[Any]] = None  # Layer-wise logit predictions
+    
     def get_summary(self) -> Dict[str, Any]:
         """Get summary of attack result."""
         return {
