@@ -4,6 +4,8 @@ GPU Model Registry and Detection
 SOTA models for GPU-enabled research based on doc/archive/gpu.md
 """
 
+from typing import Dict, List, Any
+
 # ============================================================
 # GPU MODEL REGISTRY - SOTA Research Models
 # ============================================================
