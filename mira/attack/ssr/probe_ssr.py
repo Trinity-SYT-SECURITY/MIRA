@@ -182,8 +182,16 @@ class ProbeSSR(SSRAttack):
                 # Use last token position
                 last_token_act = act[:, -1, :]  # [batch_size, d_model]
                 
+                # Sanitize NaN/Inf in activations (critical for float16)
+                if torch.isnan(last_token_act).any() or torch.isinf(last_token_act).any():
+                    last_token_act = torch.nan_to_num(last_token_act, nan=0.0, posinf=1.0, neginf=-1.0)
+                
                 # Get probe prediction
                 pred = probe(last_token_act)  # [batch_size, 1]
+                
+                # Sanitize probe output
+                if torch.isnan(pred).any() or torch.isinf(pred).any():
+                    pred = torch.nan_to_num(pred, nan=0.0, posinf=10.0, neginf=-10.0)
                 
                 # Target is 0 (acceptance, not refusal)
                 target = torch.zeros_like(pred)
@@ -192,6 +200,10 @@ class ProbeSSR(SSRAttack):
                 layer_loss = loss_fn(pred, target)
                 if layer_loss.dim() > 1:
                     layer_loss = layer_loss.squeeze(-1)
+                
+                # Skip if layer loss is NaN
+                if torch.isnan(layer_loss).any():
+                    continue
                 
                 # Add weighted loss
                 total_loss += alpha * layer_loss

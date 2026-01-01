@@ -154,6 +154,10 @@ class SubspaceAnalyzer:
         all_acts = torch.cat([safe_acts, unsafe_acts], dim=0).numpy()
         all_acts_scaled = self.scaler.fit_transform(all_acts)
         
+        # Sanitize NaN/Inf before PCA (critical for float16 models)
+        if np.any(np.isnan(all_acts_scaled)) or np.any(np.isinf(all_acts_scaled)):
+            all_acts_scaled = np.nan_to_num(all_acts_scaled, nan=0.0, posinf=1e6, neginf=-1e6)
+        
         self.pca.fit(all_acts_scaled)
         
         # Project each class to get class-specific subspaces
