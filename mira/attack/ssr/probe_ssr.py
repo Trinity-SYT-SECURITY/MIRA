@@ -410,8 +410,8 @@ class ProbeSSR(SSRAttack):
                     else:
                         continue
                     
-                    # Use last token
-                    last_token_act = act[0, -1, :].cpu()  # [d_model]
+                    # Use last token - convert to float32 to prevent BCE issues with float16
+                    last_token_act = act[0, -1, :].cpu().float()  # [d_model]
                     layer_acts[layer_idx].append(last_token_act)
         
         finally:
