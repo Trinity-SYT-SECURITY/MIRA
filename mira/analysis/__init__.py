@@ -1,92 +1,14 @@
-"""Analysis module initialization."""
+"""
+MIRA Analysis Package
 
-from mira.analysis.subspace import SubspaceAnalyzer, SubspaceResult
-from mira.analysis.activation import ActivationAnalyzer
-from mira.analysis.attention import AttentionAnalyzer
-from mira.analysis.flow_tracer import AttackFlowTracer, FlowTrace
-from mira.analysis.transformer_tracer import (
-    TransformerTracer,
-    TransformerTrace,
-    LayerTrace,
-    analyze_attack_patterns,
-)
+Provides mechanistic interpretability analysis tools:
+- Logit Lens: Layer-wise logit projection analysis
+- Attention Visualizer: Attention pattern comparison
+- Multi-Run Analyzer: Cross-experiment consistency analysis
+"""
 
-# New mechanistic interpretability tools
-from mira.analysis.logit_lens import (
-    LogitProjector,
-    PredictionTrajectory,
-    LogitLensVisualizer,
-    run_logit_lens_analysis,
-)
-from mira.analysis.uncertainty import (
-    UncertaintyAnalyzer,
-    GenerationTracker,
-    RiskDetector,
-    analyze_generation_uncertainty,
-)
-from mira.analysis.comparison import (
-    MultiModelRunner,
-    ModelConfig,
-    ComparisonReport,
-    get_recommended_models,
-    download_comparison_models,
-    COMPARISON_MODELS,
-)
-from mira.analysis.reverse_search import (
-    ReverseActivationSearch,
-    SSROptimizer,
-    extract_refusal_direction,
-)
+from mira.analysis.logit_lens import LogitLens
+from mira.analysis.attention_visualizer import AttentionVisualizer
+from mira.analysis.multi_run_analyzer import MultiRunAnalyzer
 
-# Signature Matrix Analysis
-try:
-    from mira.analysis.signature_matrix import (
-        SignatureMatrixAnalyzer,
-        SignatureMatrix,
-        FeatureVector,
-    )
-    SIGNATURE_MATRIX_AVAILABLE = True
-except ImportError:
-    SIGNATURE_MATRIX_AVAILABLE = False
-    SignatureMatrixAnalyzer = None
-    SignatureMatrix = None
-    FeatureVector = None
-
-__all__ = [
-    # Existing
-    "SubspaceAnalyzer",
-    "SubspaceResult",
-    "ActivationAnalyzer",
-    "AttentionAnalyzer",
-    "AttackFlowTracer",
-    "FlowTrace",
-    "TransformerTracer",
-    "TransformerTrace",
-    "LayerTrace",
-    "analyze_attack_patterns",
-    # Logit Lens
-    "LogitProjector",
-    "PredictionTrajectory",
-    "LogitLensVisualizer",
-    "run_logit_lens_analysis",
-    # Uncertainty
-    "UncertaintyAnalyzer",
-    "GenerationTracker",
-    "RiskDetector",
-    "analyze_generation_uncertainty",
-    # Multi-Model Comparison
-    "MultiModelRunner",
-    "ModelConfig",
-    "ComparisonReport",
-    "get_recommended_models",
-    "download_comparison_models",
-    "COMPARISON_MODELS",
-    # Reverse Search
-    "ReverseActivationSearch",
-    "SSROptimizer",
-    "extract_refusal_direction",
-    # Signature Matrix
-    "SignatureMatrixAnalyzer",
-    "SignatureMatrix",
-    "FeatureVector",
-]
+__all__ = ['LogitLens', 'AttentionVisualizer', 'MultiRunAnalyzer']
