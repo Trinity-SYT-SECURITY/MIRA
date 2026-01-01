@@ -267,11 +267,13 @@ class ProbeSSR(SSRAttack):
                 train_loss = 0.0
                 
                 for i in range(0, len(X_train), self.config.probe_batch_size):
-                    batch_X = X_train[i:i+self.config.probe_batch_size].to(self.device)
-                    batch_y = y_train[i:i+self.config.probe_batch_size].to(self.device)
+                    batch_X = X_train[i:i+self.config.probe_batch_size].to(self.device).float()
+                    batch_y = y_train[i:i+self.config.probe_batch_size].to(self.device).float()
                     
                     optimizer.zero_grad()
                     pred = probe(batch_X)
+                    # Clamp predictions for numerical stability (prevents BCE assertion failure)
+                    pred = torch.clamp(pred, min=1e-7, max=1-1e-7)
                     loss = loss_fn(pred, batch_y)
                     loss.backward()
                     optimizer.step()
@@ -281,8 +283,8 @@ class ProbeSSR(SSRAttack):
                 # Validation
                 probe.eval()
                 with torch.no_grad():
-                    val_pred = probe(X_val.to(self.device))
-                    val_acc = ((val_pred > 0.5).float() == y_val.to(self.device)).float().mean().item()
+                    val_pred = probe(X_val.to(self.device).float())
+                    val_acc = ((val_pred > 0.5).float() == y_val.to(self.device).float()).float().mean().item()
                 
                 if val_acc > best_val_acc:
                     best_val_acc = val_acc

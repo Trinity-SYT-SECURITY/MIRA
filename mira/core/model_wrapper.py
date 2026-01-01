@@ -112,7 +112,7 @@ class ModelWrapper:
             self.model = AutoModelForCausalLM.from_pretrained(
                 load_path,
                 cache_dir=cache_dir,
-                torch_dtype=self.dtype,  # Use torch_dtype for model precision
+                torch_dtype=self.dtype,  # Use torch_dtype for model precision (dtype deprecated in some versions)
                 trust_remote_code=True,
                 attn_implementation="eager",  # Enable output_attentions
                 low_cpu_mem_usage=True,  # Reduce memory usage during loading
