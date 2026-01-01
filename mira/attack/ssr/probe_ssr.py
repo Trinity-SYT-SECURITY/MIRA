@@ -15,7 +15,12 @@ from mira.attack.ssr.config import ProbeSSRConfig
 
 
 class LinearProbe(nn.Module):
-    """Linear classifier for refusal detection."""
+    """Linear classifier for refusal detection.
+    
+    NOTE: Outputs raw logits (no sigmoid). Use BCEWithLogitsLoss for training
+    which is more numerically stable than Sigmoid + BCELoss.
+    For inference, apply sigmoid manually to get probabilities.
+    """
     
     def __init__(self, input_dim: int, hidden_dim: Optional[int] = None):
         """
@@ -28,18 +33,16 @@ class LinearProbe(nn.Module):
         super().__init__()
         
         if hidden_dim is not None:
-            # 2-layer MLP
+            # 2-layer MLP (no sigmoid - outputs logits)
             self.net = nn.Sequential(
                 nn.Linear(input_dim, hidden_dim),
                 nn.ReLU(),
                 nn.Linear(hidden_dim, 1),
-                nn.Sigmoid()
             )
         else:
-            # Linear classifier
+            # Linear classifier (no sigmoid - outputs logits)
             self.net = nn.Sequential(
                 nn.Linear(input_dim, 1),
-                nn.Sigmoid()
             )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -50,7 +53,7 @@ class LinearProbe(nn.Module):
             x: [batch_size, input_dim] activations
             
         Returns:
-            [batch_size, 1] refusal probability (0 = acceptance, 1 = refusal)
+            [batch_size, 1] logits (apply sigmoid for probabilities)
         """
         return self.net(x)
 
@@ -254,9 +257,9 @@ class ProbeSSR(SSRAttack):
                 hidden_dim=self.config.probe_hidden_dim
             ).to(self.device)
             
-            # Train
+            # Train with BCEWithLogitsLoss (more numerically stable than Sigmoid + BCELoss)
             optimizer = torch.optim.Adam(probe.parameters(), lr=self.config.probe_lr)
-            loss_fn = nn.BCELoss()
+            loss_fn = nn.BCEWithLogitsLoss()  # Includes sigmoid internally
             
             best_val_acc = 0.0
             best_probe_state = None
@@ -271,20 +274,20 @@ class ProbeSSR(SSRAttack):
                     batch_y = y_train[i:i+self.config.probe_batch_size].to(self.device).float()
                     
                     optimizer.zero_grad()
-                    pred = probe(batch_X)
-                    # Clamp predictions for numerical stability (prevents BCE assertion failure)
-                    pred = torch.clamp(pred, min=1e-7, max=1-1e-7)
-                    loss = loss_fn(pred, batch_y)
+                    logits = probe(batch_X)
+                    # BCEWithLogitsLoss handles sigmoid internally - no clamp needed
+                    loss = loss_fn(logits, batch_y)
                     loss.backward()
                     optimizer.step()
                     
                     train_loss += loss.item()
                 
-                # Validation
+                # Validation (apply sigmoid to get probabilities)
                 probe.eval()
                 with torch.no_grad():
-                    val_pred = probe(X_val.to(self.device).float())
-                    val_acc = ((val_pred > 0.5).float() == y_val.to(self.device).float()).float().mean().item()
+                    val_logits = probe(X_val.to(self.device).float())
+                    val_probs = torch.sigmoid(val_logits)  # Apply sigmoid for inference
+                    val_acc = ((val_probs > 0.5).float() == y_val.to(self.device).float()).float().mean().item()
                 
                 if val_acc > best_val_acc:
                     best_val_acc = val_acc
@@ -299,9 +302,9 @@ class ProbeSSR(SSRAttack):
             probe.load_state_dict(best_probe_state)
             probe.eval()
             
-            # Store probe with loss function
+            # Store probe with loss function (BCEWithLogitsLoss for numerical stability)
             alpha = self.config.alphas[self.config.layers.index(layer_idx)]
-            self.probes[layer_idx] = (probe, alpha, nn.BCELoss(reduction='none'))
+            self.probes[layer_idx] = (probe, alpha, nn.BCEWithLogitsLoss(reduction='none'))
             
             accuracies[layer_idx] = best_val_acc
             print(f"Layer {layer_idx} best accuracy: {best_val_acc:.4f}")
@@ -364,9 +367,9 @@ class ProbeSSR(SSRAttack):
             for param in probe.parameters():
                 param.requires_grad = False
             
-            # Store probe
+            # Store probe with BCEWithLogitsLoss for numerical stability
             alpha = self.config.alphas[self.config.layers.index(layer_idx)]
-            self.probes[layer_idx] = (probe, alpha, nn.BCELoss(reduction='none'))
+            self.probes[layer_idx] = (probe, alpha, nn.BCEWithLogitsLoss(reduction='none'))
             
             print(f"Loaded probe for layer {layer_idx} (accuracy: {metadata['accuracies'].get(str(layer_idx), 'N/A')})")
     
