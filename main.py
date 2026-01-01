@@ -2739,7 +2739,7 @@ def main():
     
     # Pass .env default to selector (if set)
     env_model = os.getenv("MODEL_NAME")
-    model_name = select_model_interactive(default_model=env_model)
+    model_name, selected_device = select_model_interactive(default_model=env_model)
     
     # Attack count selection for fair comparison
     env_attack_count = os.getenv("ATTACK_COUNT")
@@ -2874,7 +2874,7 @@ def main():
     
     print(f"  Output:     {output_dir.absolute()}")
     print(f"  Model:      {model_name}")
-    print(f"  Device:     {env.gpu.backend}")
+    print(f"  Device:     {selected_device}")
     
     logger = ExperimentLogger(output_dir=str(output_dir), experiment_name="mira")
     charts = ResearchChartGenerator(output_dir=str(charts_dir))
@@ -2890,7 +2890,7 @@ def main():
         print(f"  Cache Dir:  {hf_cache_dir}")
     
     print("\n  Loading model...", end=" ", flush=True)
-    model = ModelWrapper(model_name, device=env.gpu.backend, cache_dir=hf_cache_dir)
+    model = ModelWrapper(model_name, device=selected_device, cache_dir=hf_cache_dir)
     print("DONE")
     print(f"  Layers: {model.n_layers}, Vocab: {model.vocab_size}")
     

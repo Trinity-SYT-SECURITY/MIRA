@@ -534,8 +534,7 @@ class ModelSelector:
                 default_model_obj = all_display_models[0]
                 return default_model_obj.name
 
-
-def select_model_interactive(default_model: str = None) -> str:
+def select_model_interactive(default_model: str = None) -> tuple:
     """
     Main function for interactive model selection.
     Only shows target models that are actually downloaded.
@@ -545,10 +544,14 @@ def select_model_interactive(default_model: str = None) -> str:
         default_model: Optional default model name from .env (used when user presses Enter)
     
     Returns:
-        Model name (HuggingFace identifier)
+        Tuple of (model_name, device) where:
+        - model_name: HuggingFace identifier
+        - device: "cuda" or "cpu" based on user selection
     """
     selector = ModelSelector()
-    return selector.select_model(default_model=default_model)
+    model_name = selector.select_model(default_model=default_model)
+    device = selector.get_selected_device()
+    return model_name, device
 
 
 if __name__ == "__main__":
