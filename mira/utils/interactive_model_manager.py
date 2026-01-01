@@ -97,11 +97,45 @@ class ModelManager:
     def get_required_models_from_registry(self) -> List[Dict[str, Any]]:
         """
         Get required models from MODEL_REGISTRY based on roles.
+        GPU-aware: automatically recommends SOTA models when GPU is detected.
         
         Returns:
             List of required model dicts with role information
         """
         from mira.utils.model_manager import MODEL_REGISTRY, get_recommended_models
+        from mira.utils.gpu_models import detect_gpu, get_gpu_required_models, get_gpu_models_for_tier
+        
+        # Detect GPU
+        gpu_info = detect_gpu()
+        
+        if gpu_info["available"]:
+            # GPU mode - use SOTA models
+            print(f"\n🎮 GPU Detected: {gpu_info['device_name']}")
+            print(f"   VRAM: {gpu_info['total_memory_gb']:.1f} GB")
+            print(f"   Recommended Tier: {gpu_info['recommended_tier']}")
+            
+            # Get GPU models for this tier
+            if gpu_info['recommended_tier'] != 'cpu':
+                gpu_models = get_gpu_models_for_tier(gpu_info['recommended_tier'])
+                
+                # Convert to required format
+                required_models = []
+                for model in gpu_models:
+                    required_models.append({
+                        "name": model["hf_name"],
+                        "local_name": model["local_name"],
+                        "description": f"{model['description']} ({model['size']})",
+                        "role": model["role"],
+                        "optional": model.get("tier") != "required",
+                        "replaceable_by": model.get("replaceable_by", []),
+                        "tier": model.get("tier", "required"),
+                        "research_use": model.get("research_use", ""),
+                    })
+                
+                return required_models
+        
+        # CPU mode - use original logic
+        print("\n💻 CPU Mode - Using lightweight models")
         
         required_models = []
         
