@@ -83,21 +83,19 @@ def get_available_target_models() -> List[ModelInfo]:
         if not info:
             try:
                 from mira.utils.gpu_models import GPU_MODEL_REGISTRY
-                # Debug: Print what we're looking for
-                print(f"[DEBUG] Looking for model_dir: '{model_dir}' in GPU_MODEL_REGISTRY")
+                # model_dir may be in / format (from list_downloaded_models)
+                # but local_name is in -- format, so check both
+                model_dir_dash = model_dir.replace("/", "--")  # Convert to -- format
+                
                 for hf_name, reg_info in GPU_MODEL_REGISTRY.items():
                     local_name = reg_info.get("local_name")
-                    if local_name == model_dir:
-                        print(f"[DEBUG] FOUND! {hf_name} with local_name '{local_name}'")
+                    # Check both formats
+                    if local_name == model_dir or local_name == model_dir_dash:
                         info = reg_info
                         hf_name_used = hf_name
                         break
-                if not info:
-                    print(f"[DEBUG] NOT FOUND in GPU_MODEL_REGISTRY. Available local_names:")
-                    for hf_name, reg_info in list(GPU_MODEL_REGISTRY.items())[:3]:
-                        print(f"[DEBUG]   - {reg_info.get('local_name')}")
             except ImportError as e:
-                print(f"[DEBUG] GPU_MODEL_REGISTRY import failed: {e}")
+                pass  # GPU models not available
         
         # If not found in registry, try to infer from local name
         if not info:
