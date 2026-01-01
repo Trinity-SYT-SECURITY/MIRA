@@ -182,8 +182,11 @@ class SSRAttack(ABC):
             else float('inf')
         )
         
-        # Combine with existing candidates
-        all_losses = torch.cat([self.candidate_losses, new_losses.cpu()], dim=0)
+        # Combine with existing candidates - ensure all on same device
+        # Move new tensors to the same device as existing ones
+        new_losses = new_losses.to(self.device)
+        new_ids = new_ids.to(self.device)
+        all_losses = torch.cat([self.candidate_losses, new_losses], dim=0)
         all_ids = torch.cat([self.candidate_ids, new_ids], dim=0)
         
         # Sort by loss
@@ -191,7 +194,7 @@ class SSRAttack(ABC):
         
         # Remove duplicate losses (keep first occurrence)
         unique_mask = torch.cat([
-            torch.tensor([True]),
+            torch.tensor([True], device=self.device),
             all_losses[sorted_indices[:-1]] != all_losses[sorted_indices[1:]]
         ])
         
@@ -222,14 +225,14 @@ class SSRAttack(ABC):
         print(f"\n[JUMP] Patience exceeded. Jumping from rank 0 (loss={self.candidate_losses[0]:.4f}) "
               f"to rank {jump_idx} (loss={self.candidate_losses[jump_idx]:.4f})")
         
-        # Archive the skipped candidates
+        # Archive the skipped candidates - keep on same device
         self.archive_ids = torch.cat([
             self.archive_ids,
-            self.candidate_ids[:jump_idx].cpu()
+            self.candidate_ids[:jump_idx]
         ], dim=0)
         self.archive_losses = torch.cat([
             self.archive_losses,
-            self.candidate_losses[:jump_idx].cpu()
+            self.candidate_losses[:jump_idx]
         ], dim=0)
         
         # Keep only candidates from jump_idx onwards
