@@ -68,14 +68,28 @@ def get_available_target_models() -> List[ModelInfo]:
         if model_dir in judge_local_names or model_dir == "alpaca":
             continue
         
-        # Get model info from registry
+        # Get model info from registry (check both CPU and GPU registries)
         info = None
         hf_name_used = None
+        
+        # Check CPU MODEL_REGISTRY first
         for hf_name, reg_info in MODEL_REGISTRY.items():
             if reg_info.get("local_name") == model_dir:
                 info = reg_info
                 hf_name_used = hf_name
                 break
+        
+        # If not found, check GPU_MODEL_REGISTRY
+        if not info:
+            try:
+                from mira.utils.gpu_models import GPU_MODEL_REGISTRY
+                for hf_name, reg_info in GPU_MODEL_REGISTRY.items():
+                    if reg_info.get("local_name") == model_dir:
+                        info = reg_info
+                        hf_name_used = hf_name
+                        break
+            except ImportError:
+                pass  # GPU models not available
         
         # If not found in registry, try to infer from local name
         if not info:
