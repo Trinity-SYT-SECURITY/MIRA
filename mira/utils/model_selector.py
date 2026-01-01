@@ -332,8 +332,12 @@ class ModelSelector:
             if model.description:
                 print(f"      📝 {model.description}")
     
-    def select_model(self) -> str:
-        """Interactive model selection - only shows downloaded target models."""
+    def select_model(self, default_model: str = None) -> str:
+        """Interactive model selection - only shows downloaded target models.
+        
+        Args:
+            default_model: Optional default model name from .env
+        """
         self.print_system_info()
         
         # Get available target models from project/models/
@@ -369,8 +373,13 @@ class ModelSelector:
         # Get user choice
         all_models = recommended + advanced
         
+        # Show default model info if set
+        default_display = ""
+        if default_model:
+            default_display = f" [default: {default_model}]"
+        
         print("\n" + "="*60)
-        print(f"  Enter number (1-{len(all_models)}) or press Enter for default")
+        print(f"  Enter number (1-{len(all_models)}) or press Enter for default{default_display}")
         print("="*60)
         print("\n  💡 Judge models are automatically configured")
         print("     (distilbert, toxic-bert, sentence-transformers)")
@@ -380,10 +389,20 @@ class ModelSelector:
                 choice = input("\n  Your choice: ").strip()
                 
                 if not choice:
-                    # Default: first recommended model
-                    default_model = recommended[0] if recommended else all_models[0]
-                    print(f"\n  ✓ Using default: {default_model.display_name} ({default_model.name})")
-                    return default_model.name
+                    # Use .env default if set and valid, otherwise first recommended
+                    if default_model:
+                        # Check if default_model is in available models
+                        for m in all_models:
+                            if m.name == default_model:
+                                print(f"\n  ✓ Using .env default: {m.display_name} ({m.name})")
+                                return m.name
+                        # If not found in list, still use it (might be a valid model)
+                        print(f"\n  ✓ Using .env default: {default_model}")
+                        return default_model
+                    else:
+                        default_model_obj = recommended[0] if recommended else all_models[0]
+                        print(f"\n  ✓ Using default: {default_model_obj.display_name} ({default_model_obj.name})")
+                        return default_model_obj.name
                 
                 idx = int(choice) - 1
                 if 0 <= idx < len(all_models):
@@ -406,17 +425,20 @@ class ModelSelector:
                 return default_model.name
 
 
-def select_model_interactive() -> str:
+def select_model_interactive(default_model: str = None) -> str:
     """
     Main function for interactive model selection.
     Only shows target models that are actually downloaded.
     Judge models are automatically configured.
     
+    Args:
+        default_model: Optional default model name from .env (used when user presses Enter)
+    
     Returns:
         Model name (HuggingFace identifier)
     """
     selector = ModelSelector()
-    return selector.select_model()
+    return selector.select_model(default_model=default_model)
 
 
 if __name__ == "__main__":

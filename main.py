@@ -2721,23 +2721,19 @@ def main():
     # Judge models are automatically configured - no user selection needed
     from mira.utils.model_selector import select_model_interactive
     
-    # Check if .env specifies a model
-    env_model = os.getenv("MODEL_NAME")
+    # Always show interactive selection
+    # .env MODEL_NAME is only used as default if user presses Enter without selecting
+    print("\n" + "="*70)
+    print("  TARGET MODEL SELECTION")
+    print("="*70)
+    print("  Select the model to attack (victim model)")
+    print("  💡 Judge models are automatically configured")
+    print("     (distilbert, toxic-bert, sentence-transformers)")
+    print("="*70)
     
-    if env_model:
-        print(f"\n  📌 Using model from .env: {env_model}\n")
-        model_name = env_model
-    else:
-        # Interactive selection - only shows downloaded target models from project/models/
-        # Judge models (distilbert, toxic-bert, sentence-transformers) are auto-configured
-        print("\n" + "="*70)
-        print("  TARGET MODEL SELECTION")
-        print("="*70)
-        print("  Select the model to attack (victim model)")
-        print("  💡 Judge models are automatically configured")
-        print("     (distilbert, toxic-bert, sentence-transformers)")
-        print("="*70)
-        model_name = select_model_interactive()
+    # Pass .env default to selector (if set)
+    env_model = os.getenv("MODEL_NAME")
+    model_name = select_model_interactive(default_model=env_model)
     
     # Attack count selection for fair comparison
     env_attack_count = os.getenv("ATTACK_COUNT")
