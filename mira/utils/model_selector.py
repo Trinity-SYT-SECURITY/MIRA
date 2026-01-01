@@ -515,9 +515,12 @@ class ModelSelector:
                     selected = all_display_models[idx]
                     print(f"\n  ✓ Selected: {selected.display_name} ({selected.name})")
                     
-                    # Warn if GPU model selected
+                    # Show info about GPU model and device
                     if selected.is_gpu_model:
-                        print(f"  🎮 GPU model - will use CUDA for inference")
+                        if self._selected_device == "cpu":
+                            print(f"  🖥️ GPU model will run on CPU (slower, using float32)")
+                        else:
+                            print(f"  🎮 GPU model - will use CUDA for inference")
                     
                     # Warn if challenging
                     if selected.difficulty == "hard":

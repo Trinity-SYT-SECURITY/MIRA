@@ -162,7 +162,7 @@ def train_probes_across_layers(
     
     for layer_idx in layers:
         try:
-            analyzer = SubspaceAnalyzer(model, layer=layer_idx)
+            analyzer = SubspaceAnalyzer(model, layer_idx=layer_idx)
             result = analyzer.train_probe(safe_prompts, harmful_prompts)
             accuracies[layer_idx] = result.get('accuracy', 0.5)
             print(f"  Layer {layer_idx}: {accuracies[layer_idx]:.1%}")

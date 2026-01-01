@@ -3597,13 +3597,31 @@ def main():
             ssr_attack.init_prompt(masked_prompt)
             ssr_attack.buffer_init_random()
             
-            # Generate adversarial prompt
+            # === Generate CLEAN response (before attack) ===
+            try:
+                clean_response_tokens = model.model.generate(
+                    **model.tokenize(prompt),  # Original prompt without adversarial suffix
+                    max_new_tokens=100,
+                    do_sample=False,
+                )
+                clean_full_output = model.tokenizer.decode(clean_response_tokens[0], skip_special_tokens=True)
+                # Extract only the new generated tokens
+                if prompt in clean_full_output:
+                    clean_response = clean_full_output.split(prompt)[-1].strip()
+                else:
+                    input_length = len(model.tokenizer.encode(prompt))
+                    output_tokens = clean_response_tokens[0][input_length:]
+                    clean_response = model.tokenizer.decode(output_tokens, skip_special_tokens=True).strip()
+            except Exception as e:
+                clean_response = f"Clean generation error: {e}"
+            
+            # === Generate ADVERSARIAL prompt ===
             adversarial_prompt, final_loss = ssr_attack.generate()
             
             # Extract the adversarial suffix (everything after original prompt)
             adversarial_suffix = adversarial_prompt.replace(prompt, "").strip()
             
-            # Generate response with adversarial prompt
+            # === Generate ADVERSARIAL response (after attack) ===
             try:
                 response = model.model.generate(
                     **model.tokenize(adversarial_prompt),
@@ -3627,6 +3645,7 @@ def main():
                 def __init__(self):
                     self.adversarial_suffix = adversarial_suffix
                     self.generated_response = generated_response
+                    self.clean_response = clean_response  # NEW: Original response for comparison
                     self.final_loss = final_loss
                     self.success = evaluator.evaluate_single(
                         prompt=prompt,
