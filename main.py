@@ -4074,7 +4074,7 @@ def main():
                 "kl_value": attn_comparison['most_affected_heads'][0][2],
             }
         
-        import json
+        # json is already imported at top of file
         with open(analysis_dir / "analysis_summary.json", 'w') as f:
             json.dump(analysis_summary, f, indent=2)
         
