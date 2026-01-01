@@ -3991,7 +3991,7 @@ def main():
     # ================================================================
     # MECHANISTIC INTERPRETABILITY ANALYSIS
     # ================================================================
-    if ADVANCED_ANALYSIS_AVAILABLE and len(safe_prompts) > 0 and len(attack_prompts) > 0:
+    if ADVANCED_ANALYSIS_AVAILABLE and len(safe_prompts) > 0 and len(harmful_prompts) > 0:
         print("\n" + "="*70)
         print("  MECHANISTIC INTERPRETABILITY ANALYSIS")
         print("="*70)
@@ -4001,7 +4001,7 @@ def main():
         
         # Select sample prompts for analysis
         sample_clean = safe_prompts[0]
-        sample_attack = attack_prompts[0]
+        sample_attack = harmful_prompts[0]
         
         # 1. Logit Lens Analysis
         print("\n  📊 Running Logit Lens Analysis...")
