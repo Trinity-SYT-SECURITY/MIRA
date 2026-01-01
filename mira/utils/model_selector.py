@@ -239,6 +239,11 @@ class ModelSelector:
         self.vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9 if self.has_gpu else 0
         self.ram_gb = psutil.virtual_memory().total / 1e9
         self.os_name = platform.system()
+        self._selected_device = "cuda" if self.has_gpu else "cpu"  # Default based on availability
+    
+    def get_selected_device(self) -> str:
+        """Return the device selected by the user (cuda or cpu)."""
+        return self._selected_device
     
     def print_system_info(self):
         """Print system capabilities."""
@@ -368,30 +373,73 @@ class ModelSelector:
         
         # Filter based on system capabilities
         if self.has_gpu:
-            # GPU mode: Show all models, GPU first
+            # GPU mode: First ask which device to use
             print("\n" + "="*60)
-            print("  🎮 GPU MODE - All models accessible")
+            print("  🎮 GPU DETECTED - Select Device Mode")
             print("="*60)
+            print("\n  [1] 🎮 GPU Mode (Recommended)")
+            print("      Faster training, larger models supported")
+            print("      Uses float16 precision for memory efficiency")
+            print("\n  [2] 🖥️ CPU Mode")
+            print("      Slower but more stable")
+            print("      Uses float32 precision, no CUDA issues")
+            print("\n" + "="*60)
+            print("  Enter 1 or 2 (default: 1 for GPU): ", end="")
             
-            all_display_models = []
+            try:
+                device_choice = input().strip()
+            except EOFError:
+                device_choice = ""
             
-            # Show GPU models first (filtered by VRAM compatibility)
-            compatible_gpu = [m for m in gpu_models if m.min_vram_gb <= self.vram_gb]
-            if compatible_gpu:
-                # Sort by VRAM requirement
-                compatible_gpu.sort(key=lambda m: m.min_vram_gb)
-                self.print_model_list(compatible_gpu, "🎮 GPU MODELS (Recommended for GPU systems)")
-                all_display_models.extend(compatible_gpu)
+            use_gpu = device_choice != "2"
             
-            # Then show CPU models
-            if cpu_models:
-                # Filter by RAM
-                compatible_cpu = [m for m in cpu_models if m.min_ram_gb <= self.ram_gb]
-                if compatible_cpu:
-                    compatible_cpu.sort(key=lambda m: m.min_ram_gb)
-                    start_idx = len(all_display_models) + 1
-                    self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Also available)", start_index=start_idx)
-                    all_display_models.extend(compatible_cpu)
+            if use_gpu:
+                print("\n  ✓ Using GPU mode")
+                # GPU mode: Show all models, GPU first
+                print("\n" + "="*60)
+                print("  🎮 GPU MODE - All models accessible")
+                print("="*60)
+                
+                all_display_models = []
+                
+                # Show GPU models first (filtered by VRAM compatibility)
+                compatible_gpu = [m for m in gpu_models if m.min_vram_gb <= self.vram_gb]
+                if compatible_gpu:
+                    # Sort by VRAM requirement
+                    compatible_gpu.sort(key=lambda m: m.min_vram_gb)
+                    self.print_model_list(compatible_gpu, "🎮 GPU MODELS (Recommended for GPU systems)")
+                    all_display_models.extend(compatible_gpu)
+                
+                # Then show CPU models
+                if cpu_models:
+                    # Filter by RAM
+                    compatible_cpu = [m for m in cpu_models if m.min_ram_gb <= self.ram_gb]
+                    if compatible_cpu:
+                        compatible_cpu.sort(key=lambda m: m.min_ram_gb)
+                        start_idx = len(all_display_models) + 1
+                        self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Also available)", start_index=start_idx)
+                        all_display_models.extend(compatible_cpu)
+                
+                # Store device selection
+                self._selected_device = "cuda"
+            else:
+                print("\n  ✓ Using CPU mode (GPU disabled)")
+                # User chose CPU: Only show CPU models
+                print("\n" + "="*60)
+                print("  🖥️ CPU MODE - Showing CPU-compatible models only")
+                print("="*60)
+                
+                all_display_models = []
+                
+                if cpu_models:
+                    compatible_cpu = [m for m in cpu_models if m.min_ram_gb <= self.ram_gb]
+                    if compatible_cpu:
+                        compatible_cpu.sort(key=lambda m: m.min_ram_gb)
+                        self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Downloaded)")
+                        all_display_models.extend(compatible_cpu)
+                
+                # Store device selection
+                self._selected_device = "cpu"
         else:
             # CPU mode: Only show CPU models (hide GPU-only models)
             print("\n" + "="*60)
@@ -409,6 +457,8 @@ class ModelSelector:
                     self.print_model_list(compatible_cpu, "🖥️ CPU MODELS (Downloaded)")
                     all_display_models.extend(compatible_cpu)
             
+            # Store device selection for CPU-only mode
+            self._selected_device = "cpu"
             if not all_display_models:
                 print("\n⚠️ No CPU-compatible models found!")
                 print("   GPU models available but require a GPU:")
