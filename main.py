@@ -3772,8 +3772,8 @@ def main():
             response=result.generated_response or "",
             success=result.success,
             metrics={"loss": result.final_loss},
-            layer_data=result.layer_activations,
-            attention_data=result.attention_patterns,
+            layer_data=getattr(result, 'layer_activations', None),
+            attention_data=getattr(result, 'attention_patterns', None),
         )
         
         # Save conversation to log file
