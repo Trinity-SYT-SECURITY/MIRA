@@ -904,7 +904,11 @@ class ModelManager:
                     print(f"  2. Custom directory")
                     print(f"  3. Cancel download")
                     
-                    loc_choice = input("Choice (1-3): ").strip()
+                    loc_choice = input("Choice (1-3, default: 1): ").strip()
+                    
+                    # Default to option 1 if empty
+                    if not loc_choice:
+                        loc_choice = "1"
                     
                     download_dir = None
                     if loc_choice == "1":
