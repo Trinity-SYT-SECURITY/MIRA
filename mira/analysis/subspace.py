@@ -214,6 +214,12 @@ class SubspaceAnalyzer:
         # Scale features
         X_scaled = self.scaler.fit_transform(X)
         
+        # Sanitize NaN/Inf values (can occur with float16 precision)
+        if np.any(np.isnan(X_scaled)) or np.any(np.isinf(X_scaled)):
+            print("  ⚠ Warning: NaN/Inf in activations, sanitizing...")
+            # Replace NaN with 0, Inf with large finite values
+            X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=1e6, neginf=-1e6)
+        
         # Train logistic regression probe
         probe = LogisticRegression(max_iter=1000, class_weight="balanced")
         probe.fit(X_scaled, y)
