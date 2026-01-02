@@ -165,12 +165,16 @@ def train_probes_across_layers(
             analyzer = SubspaceAnalyzer(model, layer_idx=layer_idx)
             result = analyzer.train_probe(safe_prompts, harmful_prompts)
             # SubspaceResult is a dataclass with probe_accuracy attribute
-            accuracies[layer_idx] = result.probe_accuracy if result.probe_accuracy is not None else 0.5
-            print(f"  Layer {layer_idx}: {accuracies[layer_idx]:.1%}")
+            accuracies[layer_idx] = result.probe_accuracy if result.probe_accuracy is not None else None
+            if accuracies[layer_idx] is not None:
+                print(f"  Layer {layer_idx}: {accuracies[layer_idx]:.1%}")
+            else:
+                print(f"  Layer {layer_idx}: N/A (no valid data)")
 
         except Exception as e:
             print(f"  Layer {layer_idx}: Failed ({e})")
-            accuracies[layer_idx] = 0.5
+            # Mark as None instead of 0.5 for honest reporting
+            accuracies[layer_idx] = None
     
     return accuracies
 

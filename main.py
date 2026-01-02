@@ -14,6 +14,12 @@ Usage:
     python main.py
 """
 
+import os
+# Enable synchronous CUDA execution for proper error diagnosis
+# Shows real error location instead of async stacktraces
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
+
 import warnings
 import os
 import sys
