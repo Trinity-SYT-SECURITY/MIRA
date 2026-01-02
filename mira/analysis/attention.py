@@ -75,7 +75,13 @@ class AttentionAnalyzer:
         Returns:
             Dictionary mapping (layer, head) to attention pattern tensor
         """
-        _, cache = self.model.run_with_cache(text)
+        try:
+            _, cache = self.model.run_with_cache(text)
+        except RuntimeError as e:
+            if "CUDA" in str(e):
+                print(f"  ⚠ CUDA error in attention extraction, returning empty")
+                return {}
+            raise
         
         if layers is None:
             layers = list(range(self.n_layers))
@@ -88,9 +94,11 @@ class AttentionAnalyzer:
             if attn is not None:
                 for head_idx in heads:
                     if head_idx < attn.shape[1]:
-                        patterns[(layer_idx, head_idx)] = attn[0, head_idx, :, :]
+                        # Convert to float32 for numerical stability
+                        patterns[(layer_idx, head_idx)] = attn[0, head_idx, :, :].float()
         
         return patterns
+
     
     def compute_attention_entropy(
         self,

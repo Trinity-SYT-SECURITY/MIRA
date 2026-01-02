@@ -67,6 +67,25 @@ class LogitLens:
         else:
             raise ValueError("Could not find unembedding matrix (lm_head)")
     
+    def _validate_tokens(self, prompt: str) -> bool:
+        """
+        Validate that tokenized prompt has all valid token IDs.
+        Prevents CUDA kernel asserts from invalid token indices.
+        """
+        try:
+            inputs = self.model.tokenizer(prompt, return_tensors="pt")
+            input_ids = inputs["input_ids"]
+            
+            # Check for out-of-range tokens
+            if input_ids.max() >= self.vocab_size or input_ids.min() < 0:
+                print(f"  ⚠ Invalid token IDs (range: {input_ids.min()}-{input_ids.max()}, vocab: {self.vocab_size})")
+                return False
+            return True
+        except Exception as e:
+            print(f"  ⚠ Token validation failed: {e}")
+            return False
+
+    
     def analyze(
         self,
         prompt: str,
@@ -82,10 +101,22 @@ class LogitLens:
             position: Token position to analyze (-1 = last)
             
         Returns:
-            LogitLensResult with layer-wise logits and probabilities
+            LogitLensResult with layer-wise logits and probabilities, or None if validation fails
         """
+        # Validate tokens before processing to prevent CUDA kernel asserts
+        if not self._validate_tokens(prompt):
+            print(f"  ⚠ Skipping Logit Lens due to invalid tokens")
+            return None
+        
         # Get hidden states from all layers
-        hidden_states = self._get_hidden_states(prompt)
+        try:
+            hidden_states = self._get_hidden_states(prompt)
+        except RuntimeError as e:
+            if "CUDA" in str(e):
+                print(f"  ⚠ CUDA error in Logit Lens, returning None")
+                return None
+            raise
+
         
         layer_logits = {}
         layer_probs = {}
