@@ -47,7 +47,7 @@ doc/
 .settings/
 *.sublime-project
 *.sublime-workspace
-
+paper/
 # ===================
 # Trained Models (DO NOT UPLOAD)
 # ===================
