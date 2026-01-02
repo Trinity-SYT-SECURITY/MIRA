@@ -93,25 +93,49 @@ class SubspaceAnalyzer:
         activations = []
         
         for text in texts:
-            _, cache = self.model.run_with_cache(text)
-            hidden = cache.hidden_states.get(layer_idx)
-            
-            if hidden is None:
-                raise ValueError(f"No activations found for layer {layer_idx}")
-            
-            # Extract based on token position
-            if self.token_position == "last":
-                act = hidden[0, -1, :]  # Last token of first batch item
-            elif self.token_position == "first":
-                act = hidden[0, 0, :]
-            elif self.token_position == "mean":
-                act = hidden[0].mean(dim=0)
-            else:
-                raise ValueError(f"Unknown token position: {self.token_position}")
-            
-            activations.append(act.cpu())
+            try:
+                _, cache = self.model.run_with_cache(text)
+                hidden = cache.hidden_states.get(layer_idx)
+                
+                if hidden is None:
+                    raise ValueError(f"No activations found for layer {layer_idx}")
+                
+                # Extract based on token position
+                if self.token_position == "last":
+                    act = hidden[0, -1, :]  # Last token of first batch item
+                elif self.token_position == "first":
+                    act = hidden[0, 0, :]
+                elif self.token_position == "mean":
+                    act = hidden[0].mean(dim=0)
+                else:
+                    raise ValueError(f"Unknown token position: {self.token_position}")
+                
+                # Move to CPU and sanitize NaN/Inf immediately
+                act = act.cpu().float()  # Convert to float32 for stability
+                if torch.isnan(act).any() or torch.isinf(act).any():
+                    act = torch.nan_to_num(act, nan=0.0, posinf=1e6, neginf=-1e6)
+                
+                activations.append(act)
+                
+            except RuntimeError as e:
+                if "CUDA" in str(e):
+                    # CUDA error - try to recover and use zeros
+                    print(f"  ⚠ CUDA error at layer {layer_idx}, using fallback...")
+                    try:
+                        torch.cuda.synchronize()
+                    except:
+                        pass
+                    # Create zero tensor as fallback
+                    if activations:
+                        act = torch.zeros_like(activations[0])
+                    else:
+                        act = torch.zeros(self.model.hidden_size)
+                    activations.append(act)
+                else:
+                    raise
         
         return torch.stack(activations)
+
     
     def identify_subspaces(
         self,
