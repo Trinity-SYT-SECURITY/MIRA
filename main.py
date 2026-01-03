@@ -126,6 +126,9 @@ def run_pair_experiments():
         "BAAI/bge-base-en-v1.5",
         "sentence-transformers--all-MiniLM-L6-v2",
         "unitary--toxic-bert",
+        "deberta",  # Classification model, not generative
+        "roberta",  # Classification model, not generative
+        "bert-",    # BERT variants are not generative
     ]
     
     # RLHF models (recommended for PAIR experiments)
