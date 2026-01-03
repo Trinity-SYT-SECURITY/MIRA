@@ -4184,7 +4184,7 @@ def main():
         
         try:
             # Initialize analyzers
-            logit_projector = LogitProjector(model.model, model.tokenizer)
+            logit_lens = LogitLens(model)
             
             # Analyze successful attacks (limit to first 3 for performance)
             successful_attacks = [r for r in attack_results if r.get("success", False)]
@@ -4198,35 +4198,39 @@ def main():
                     adv_suffix = result.get("adversarial_suffix", "")
                     
                     if adv_suffix:
-                        # Run Logit Lens on clean prompt
-                        clean_trajectory = run_logit_lens_analysis(
-                            model.model, model.tokenizer, prompt
-                        )
-                        
-                        # Run Logit Lens on adversarial prompt
+                        # Run Logit Lens comparison on clean vs adversarial
                         adv_prompt = prompt + " " + adv_suffix
-                        adv_trajectory = run_logit_lens_analysis(
-                            model.model, model.tokenizer, adv_prompt
-                        )
                         
-                        # Run Uncertainty analysis
-                        uncertainty_result = analyze_generation_uncertainty(
-                            model.model, model.tokenizer, adv_prompt, max_tokens=20
-                        )
+                        try:
+                            logit_result = run_logit_lens_analysis(
+                                model=model,
+                                clean_prompt=prompt,
+                                attack_prompt=adv_prompt,
+                            )
+                            
+                            # Store results
+                            logit_lens_results.append({
+                                "prompt": prompt,
+                                "comparison": logit_result.get('comparison', {}),
+                            })
+                        except Exception as lens_err:
+                            print(f"    Logit lens skipped for prompt {i+1}: {lens_err}")
                         
-                        # Store results
-                        logit_lens_results.append({
-                            "prompt": prompt,
-                            "clean_trajectory": clean_trajectory,
-                            "adversarial_trajectory": adv_trajectory,
-                        })
-                        
-                        uncertainty_results.append({
-                            "prompt": prompt,
-                            "risk_level": uncertainty_result["risk"]["risk_level"],
-                            "risk_score": uncertainty_result["risk"]["risk_score"],
-                            "mean_entropy": uncertainty_result["metrics"]["mean_entropy"],
-                        })
+                        # Run Uncertainty analysis if available
+                        try:
+                            uncertainty_result = analyze_generation_uncertainty(
+                                model.model, model.tokenizer, adv_prompt, max_tokens=20
+                            )
+                            
+                            uncertainty_results.append({
+                                "prompt": prompt,
+                                "risk_level": uncertainty_result.get("risk", {}).get("risk_level", "unknown"),
+                                "risk_score": uncertainty_result.get("risk", {}).get("risk_score", 0),
+                                "mean_entropy": uncertainty_result.get("metrics", {}).get("mean_entropy", 0),
+                            })
+                        except Exception as unc_err:
+                            print(f"    Uncertainty analysis skipped for prompt {i+1}: {unc_err}")
+
                 
                 print(f"    ✓ Advanced analysis complete")
                 if uncertainty_results:
