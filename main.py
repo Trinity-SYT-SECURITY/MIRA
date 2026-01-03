@@ -2892,10 +2892,34 @@ def main():
             pass
     
     # ================================================================
+    # ENVIRONMENT DETECTION (GPU/CPU)
+    # ================================================================
+    import torch
+    
+    print("\n" + "="*70)
+    print("  ENVIRONMENT DETECTION")
+    print("="*70)
+    
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        print(f"  🟢 GPU Detected: {gpu_name}")
+        print(f"     Memory: {gpu_memory:.1f} GB")
+        device = "cuda"
+    else:
+        print("  🟡 No GPU detected - Running on CPU")
+        print("     (Smaller models recommended: gpt2, pythia-70m)")
+        device = "cpu"
+    
+    print(f"  Device: {device}")
+    print("="*70)
+    
+    # ================================================================
     # MODE SELECTION
     # ================================================================
     print("\n" + "="*70)
     print("  MIRA MODE SELECTION")
+
     print("="*70)
     print("""
   [1] Complete Research Pipeline (Default) ⭐
