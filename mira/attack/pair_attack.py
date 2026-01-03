@@ -179,13 +179,59 @@ class PAIRAttack:
         
         current_prompt = self.generate_initial_prompt(harmful_prompt)
         response = ""
+        cuda_error_count = 0
         
         for iteration in range(self.max_iterations):
             try:
+                # Validate prompt isn't too long
+                if len(current_prompt) > 2000:
+                    current_prompt = current_prompt[:2000]
+                
                 responses = self.target_model.generate(current_prompt, max_new_tokens=150)
                 response = responses[0] if isinstance(responses, list) else responses
                 if response is None:
                     response = ""
+                
+                # Reset error count on successful generation
+                cuda_error_count = 0
+                
+            except RuntimeError as e:
+                error_msg = str(e)
+                
+                # Handle CUDA errors
+                if "CUDA" in error_msg or "device-side assert" in error_msg:
+                    cuda_error_count += 1
+                    logger.warning(f"CUDA error at iteration {iteration}: {e}")
+                    
+                    if cuda_error_count >= 3:
+                        print(f"    ⚠ Multiple CUDA errors detected, skipping this prompt")
+                        return {
+                            'success': False,
+                            'final_prompt': current_prompt,
+                            'final_response': "CUDA error - skipped",
+                            'iterations': iteration,
+                            'confidence': 0.0,
+                            'judge_method': 'ensemble' if self.judge else 'pattern',
+                            'asr': 0.0,
+                            'signatures': {},
+                            'error': 'cuda_error'
+                        }
+                    
+                    # Try to recover
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            torch.cuda.synchronize()
+                    except:
+                        pass
+                    
+                    response = ""
+                    continue
+                else:
+                    logger.warning(f"Generation failed: {e}")
+                    response = ""
+                    
             except Exception as e:
                 logger.warning(f"Generation failed: {e}")
                 response = ""
@@ -215,6 +261,7 @@ class PAIRAttack:
             current_prompt = self.refine_prompt(
                 current_prompt, response, harmful_prompt, iteration
             )
+
         
         print(f"    ✗ PAIR FAILED after {self.max_iterations} iterations")
         return {

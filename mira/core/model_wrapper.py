@@ -326,6 +326,18 @@ class ModelWrapper:
         """
         inputs = self.tokenize(text)
         
+        # Validate token IDs to prevent CUDA errors
+        input_ids = inputs["input_ids"]
+        vocab_size = self.tokenizer.vocab_size
+        
+        # Check for invalid token IDs
+        max_token_id = input_ids.max().item() if input_ids.numel() > 0 else 0
+        if max_token_id >= vocab_size:
+            # Replace invalid tokens with unk_token_id
+            unk_id = self.tokenizer.unk_token_id if self.tokenizer.unk_token_id is not None else 0
+            input_ids = torch.where(input_ids >= vocab_size, unk_id, input_ids)
+            inputs["input_ids"] = input_ids
+        
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
