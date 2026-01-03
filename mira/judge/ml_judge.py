@@ -139,6 +139,16 @@ class MLJudge:
         if not TRANSFORMERS_AVAILABLE:
             print("Error: transformers library not available")
             return False
+        
+        import os
+        # Get device from MIRA_DEVICE env var or default to CPU
+        mira_device = os.environ.get("MIRA_DEVICE", "cpu")
+        if mira_device == "cuda" and TORCH_AVAILABLE and torch.cuda.is_available():
+            device_id = 0  # Use first GPU
+            device_str = "GPU"
+        else:
+            device_id = -1  # CPU
+            device_str = "CPU"
             
         loaded_count = 0
         
@@ -146,11 +156,11 @@ class MLJudge:
         if self.config.use_distilbert:
             try:
                 if verbose:
-                    print("  Loading DistilBERT classifier...", end=" ", flush=True)
+                    print(f"  Loading DistilBERT classifier ({device_str})...", end=" ", flush=True)
                 self._distilbert = pipeline(
                     "text-classification",
                     model=self.config.distilbert_model,
-                    device=-1,  # CPU
+                    device=device_id,
                     truncation=True,
                     max_length=512,
                 )
@@ -165,11 +175,11 @@ class MLJudge:
         if self.config.use_toxic_classifier:
             try:
                 if verbose:
-                    print("  Loading Toxic classifier...", end=" ", flush=True)
+                    print(f"  Loading Toxic classifier ({device_str})...", end=" ", flush=True)
                 self._toxic = pipeline(
                     "text-classification",
                     model=self.config.toxic_model,
-                    device=-1,
+                    device=device_id,
                     truncation=True,
                     max_length=512,
                     top_k=None,  # Return all labels
@@ -185,11 +195,11 @@ class MLJudge:
         if self.config.use_sentiment:
             try:
                 if verbose:
-                    print("  Loading Sentiment analyzer...", end=" ", flush=True)
+                    print(f"  Loading Sentiment analyzer ({device_str})...", end=" ", flush=True)
                 self._sentiment = pipeline(
                     "text-classification",
                     model=self.config.sentiment_model,
-                    device=-1,
+                    device=device_id,
                     truncation=True,
                     max_length=512,
                 )
