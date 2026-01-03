@@ -2892,27 +2892,51 @@ def main():
             pass
     
     # ================================================================
-    # ENVIRONMENT DETECTION (GPU/CPU)
+    # DEVICE SELECTION (GPU/CPU)
     # ================================================================
     import torch
+    import os
     
     print("\n" + "="*70)
-    print("  ENVIRONMENT DETECTION")
+    print("  DEVICE SELECTION")
     print("="*70)
     
-    if torch.cuda.is_available():
+    gpu_available = torch.cuda.is_available()
+    
+    if gpu_available:
         gpu_name = torch.cuda.get_device_name(0)
         gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         print(f"  🟢 GPU Detected: {gpu_name}")
         print(f"     Memory: {gpu_memory:.1f} GB")
-        device = "cuda"
+        print()
+        print("  ┌────────────────────────────────────────────────────────────┐")
+        print("  │  SELECT DEVICE                                             │")
+        print("  ├────────────────────────────────────────────────────────────┤")
+        print("  │  1. GPU (CUDA) - Faster, recommended for large models      │")
+        print("  │  2. CPU        - Slower, but more stable                   │")
+        print("  └────────────────────────────────────────────────────────────┘")
+        
+        try:
+            device_choice = input("\n  Select device (1/2, default: 1): ").strip()
+            if device_choice == "2":
+                device = "cpu"
+                print("  ✓ Selected: CPU")
+            else:
+                device = "cuda"
+                print("  ✓ Selected: GPU (CUDA)")
+        except:
+            device = "cuda"
+            print("  ✓ Default: GPU (CUDA)")
     else:
-        print("  🟡 No GPU detected - Running on CPU")
+        print("  🟡 No GPU detected - Using CPU")
         print("     (Smaller models recommended: gpt2, pythia-70m)")
         device = "cpu"
     
-    print(f"  Device: {device}")
+    # Set global device for all model loading
+    os.environ["MIRA_DEVICE"] = device
+    print(f"\n  📌 Device set for all operations: {device.upper()}")
     print("="*70)
+
     
     # ================================================================
     # MODE SELECTION

@@ -72,7 +72,14 @@ class ModelWrapper:
             dtype: Data type for model weights
             cache_dir: Directory for caching model files
         """
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        import os
+        # Priority: explicit device > MIRA_DEVICE env var > auto-detect
+        if device:
+            self.device = device
+        elif os.environ.get("MIRA_DEVICE"):
+            self.device = os.environ.get("MIRA_DEVICE")
+        else:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Auto-select dtype: use float16 for GPU to save memory, float32 for CPU
         if dtype is not None:
