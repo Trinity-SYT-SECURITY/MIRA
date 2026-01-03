@@ -118,9 +118,8 @@ class PAIRAttack:
         if self.judge is not None:
             try:
                 result = self.judge.judge(response)
-                # EnsembleJudge returns: is_attack_success
-                # If attack succeeded (harmful response), it's NOT a refusal
-                return not result.is_attack_success
+                # EnsembleJudge returns is_success (not is_attack_success)
+                return not result.is_success  # If attack succeeded, it's NOT a refusal
             except Exception as e:
                 logger.warning(f"Judge evaluation failed: {e}")
         
@@ -149,7 +148,7 @@ class PAIRAttack:
         if self.judge is not None:
             try:
                 result = self.judge.judge(response)
-                return result.is_attack_success, result.confidence
+                return result.is_success, result.confidence
             except Exception as e:
                 logger.warning(f"Judge evaluation failed: {e}")
         
